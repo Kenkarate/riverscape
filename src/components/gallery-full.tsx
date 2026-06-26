@@ -78,10 +78,9 @@ export function GalleryFull() {
         {items.map((img, i) => (
           <motion.button
             key={img.src}
-            layout
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.4, delay: (i % 6) * 0.04 }}
+            transition={{ duration: 0.35, delay: Math.min(i * 0.03, 0.3) }}
             onClick={() => setIndex(i)}
             className="group relative block w-full overflow-hidden rounded-xl"
           >

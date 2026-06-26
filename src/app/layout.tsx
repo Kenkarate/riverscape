@@ -51,7 +51,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${cormorant.variable} ${inter.variable}`}>
+    <html lang="en" data-scroll-behavior="smooth" className={`${cormorant.variable} ${inter.variable}`}>
+      <head>
+        {/* Preload hero poster so it's visible before the video loads */}
+        <link rel="preload" as="image" href="/images/landscape/1.jpg" fetchPriority="high" />
+        {/* Preload first hero video */}
+        <link rel="preload" as="video" href="/videos/reel-2.mp4" type="video/mp4" />
+      </head>
       <body className="antialiased">
         <Navbar />
         <main>{children}</main>

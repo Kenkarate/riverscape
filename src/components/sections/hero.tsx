@@ -34,6 +34,7 @@ export function Hero() {
           autoPlay
           muted
           playsInline
+          preload="auto"
           onEnded={handleEnded}
           initial={{ opacity: 0, scale: 1.08 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -42,6 +43,14 @@ export function Hero() {
           poster={HERO_POSTER}
         >
           <source src={HERO_VIDEOS[active]} type="video/mp4" />
+        {/* Preload next video in background */}
+        {HERO_VIDEOS[(active + 1) % HERO_VIDEOS.length] && (
+          <link
+            rel="preload"
+            as="video"
+            href={HERO_VIDEOS[(active + 1) % HERO_VIDEOS.length]}
+          />
+        )}
         </motion.video>
       </div>
 

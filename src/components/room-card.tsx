@@ -28,6 +28,7 @@ export function RoomCard({
           alt={room.name}
           fill
           sizes="(max-width: 768px) 85vw, 360px"
+          loading="lazy"
           className="object-cover transition-transform duration-700 group-hover:scale-110"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-forest-dark/40 to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100" />

@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import { MapPin } from "lucide-react";
 import { RESORT } from "@/lib/data";
-import { GalleryFull } from "@/components/gallery-full";
+
+const GalleryFull = dynamic(() => import("@/components/gallery-full").then(m => ({ default: m.GalleryFull })));
 
 export const metadata: Metadata = {
   title: "Gallery | Riverscape Resort, Kerala",

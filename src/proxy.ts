@@ -1,0 +1,35 @@
+import { auth } from "@/lib/auth";
+import { NextResponse } from "next/server";
+
+export default auth((req) => {
+  const { pathname } = req.nextUrl;
+  const isLoggedIn = !!req.auth;
+  const userRole = req.auth?.user?.role;
+
+  // Protect /admin/* and /api/admin/*
+  const isAdminRoute = pathname.startsWith("/admin") || pathname.startsWith("/api/admin");
+
+  if (isAdminRoute && pathname !== "/admin/login") {
+    if (!isLoggedIn) {
+      const loginUrl = new URL("/admin/login", req.url);
+      loginUrl.searchParams.set("callbackUrl", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+
+    // Only STAFF, ADMIN, SUPER_ADMIN can access admin routes
+    if (userRole === "GUEST") {
+      return NextResponse.redirect(new URL("/admin/login", req.url));
+    }
+  }
+
+  // Redirect logged-in admin away from login page
+  if (pathname === "/admin/login" && isLoggedIn && userRole !== "GUEST") {
+    return NextResponse.redirect(new URL("/admin", req.url));
+  }
+
+  return NextResponse.next();
+});
+
+export const config = {
+  matcher: ["/admin/:path*", "/api/admin/:path*"],
+};

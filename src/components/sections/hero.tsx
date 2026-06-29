@@ -1,57 +1,58 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, MapPin, MessageCircle } from "lucide-react";
-import { HERO_VIDEOS, HERO_POSTER, RESORT, waLink } from "@/lib/data";
+import { HERO_IMAGES, RESORT, waLink } from "@/lib/data";
+
+const SLIDE_DURATION = 5000;
 
 export function Hero() {
   const [active, setActive] = useState(0);
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  // Advance to the next clip when the current one ends.
-  const handleEnded = () => {
-    setActive((prev) => (prev + 1) % HERO_VIDEOS.length);
-  };
 
   useEffect(() => {
-    const v = videoRef.current;
-    if (v) {
-      v.load();
-      v.play().catch(() => {
-        /* autoplay may be blocked until interaction; muted should allow it */
-      });
-    }
-  }, [active]);
+    const timer = setInterval(() => {
+      setActive((prev) => (prev + 1) % HERO_IMAGES.length);
+    }, SLIDE_DURATION);
+    return () => clearInterval(timer);
+  }, []);
 
   return (
     <section id="home" className="relative h-svh min-h-[640px] w-full overflow-hidden">
+      {/* Image slideshow */}
       <div className="absolute inset-0">
-        <motion.video
-          key={active}
-          ref={videoRef}
-          autoPlay
-          muted
-          playsInline
-          preload="auto"
-          onEnded={handleEnded}
-          initial={{ opacity: 0, scale: 1.08 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ opacity: { duration: 1.2 }, scale: { duration: 8, ease: "linear" } }}
-          className="h-full w-full object-cover"
-          poster={HERO_POSTER}
-        >
-          <source src={HERO_VIDEOS[active]} type="video/mp4" />
-        {/* Preload next video in background */}
-        {HERO_VIDEOS[(active + 1) % HERO_VIDEOS.length] && (
-          <link
-            rel="preload"
-            as="video"
-            href={HERO_VIDEOS[(active + 1) % HERO_VIDEOS.length]}
-          />
-        )}
-        </motion.video>
+        <AnimatePresence initial={false}>
+          <motion.div
+            key={active}
+            initial={{ opacity: 0, scale: 1.08 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{
+              opacity: { duration: 1.2, ease: "easeInOut" },
+              scale: { duration: 8, ease: "linear" },
+            }}
+            className="absolute inset-0"
+          >
+            <Image
+              src={HERO_IMAGES[active]}
+              alt="Riverscape resort"
+              fill
+              priority={active === 0}
+              sizes="100vw"
+              className="object-cover"
+              quality={90}
+            />
+          </motion.div>
+        </AnimatePresence>
+
+        {/* Preload next image */}
+        <link
+          rel="preload"
+          as="image"
+          href={HERO_IMAGES[(active + 1) % HERO_IMAGES.length]}
+        />
       </div>
 
       {/* Overlays for legibility */}
@@ -122,10 +123,10 @@ export function Hero() {
 
       {/* Slide indicators */}
       <div className="absolute bottom-24 left-1/2 z-10 flex -translate-x-1/2 gap-2">
-        {HERO_VIDEOS.map((_, i) => (
+        {HERO_IMAGES.map((_, i) => (
           <button
             key={i}
-            aria-label={`Show clip ${i + 1}`}
+            aria-label={`Show slide ${i + 1}`}
             onClick={() => setActive(i)}
             className={`h-1 rounded-full transition-all duration-500 ${
               i === active ? "w-8 bg-gold" : "w-4 bg-cream/40 hover:bg-cream/70"

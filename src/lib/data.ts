@@ -33,14 +33,12 @@ export const EXTRA_CHARGES = [
   { label: "Adult (12 yrs & above)", price: 1000, unit: "per head" },
 ];
 
-export const HERO_VIDEOS = [
-  "/videos/reel-2.mp4",
-  "/videos/reel-8.mp4",
-  "/videos/reel-6.mp4",
+export const HERO_IMAGES = [
+  "/images/landscape/1.jpg",
+  "/images/landscape/3.jpg",
+  "/images/landscape/6.jpg",
+  "/images/landscape/4.jpg",
 ];
-
-// Poster shown before/while the hero video loads.
-export const HERO_POSTER = "/images/landscape/1.jpg";
 
 export const ABOUT_IMAGES = [
   "/images/landscape/2.jpg",
@@ -49,12 +47,13 @@ export const ABOUT_IMAGES = [
 ];
 
 export const rooms: Room[] = [
+  // --- Pool Villa ---
   {
-    id: "premium-pool-villa",
-    name: "Premium Pool Villa",
-    description: "Our flagship villa with a private pool overlooking the river.",
+    id: "pool-villa",
+    name: "Pool Villa",
+    description: "Our signature pool villa with a private pool, king bed and single bed — the ultimate riverside retreat.",
     longDescription:
-      "The pinnacle of Riverscape living. The Premium Pool Villa pairs a private pool with sweeping river views, expansive indoor-outdoor living and bespoke service throughout your stay. The ultimate riverside indulgence in Kalady Neeleswaram.",
+      "Room 7010 — The crown jewel of Riverscape. This private pool villa offers a king-size bed, an additional single bed and exclusive pool access, set against the tranquil backdrop of Kalady Neeleswaram. Ideal for couples or small families seeking total privacy and indulgence by the river.",
     price: 20000,
     image: "/images/rooms/premium-pool-villa/1.jpg",
     gallery: [
@@ -65,49 +64,18 @@ export const rooms: Room[] = [
       "/images/rooms/premium-pool-villa/5.jpg",
       "/images/rooms/premium-pool-villa/6.jpg",
     ],
-    capacity: 2,
-    size: "Private Pool Villa",
-    features: ["Private pool", "River view", "King bed", "Indoor-outdoor living"],
-  },
-  {
-    id: "heritage-pool-villa",
-    name: "Heritage Pool Villa",
-    description: "Kerala-inspired villa with its own private pool and timber accents.",
-    longDescription:
-      "A celebration of Kerala craftsmanship, the Heritage Pool Villa blends traditional architecture with a private pool and modern comforts. Warm timber, cool stone and the sound of water set the scene for a restful retreat.",
-    price: 7000,
-    image: "/images/rooms/heritage-pool-villa/1.jpg",
-    gallery: [
-      "/images/rooms/heritage-pool-villa/1.jpg",
-      "/images/rooms/heritage-pool-villa/2.jpg",
-    ],
-    capacity: 2,
+    capacity: 3,
     size: "Pool Villa",
-    features: ["Private pool", "Heritage decor", "King bed", "Garden setting"],
+    features: ["Private pool", "King bed", "Single bed", "River view", "Indoor-outdoor living"],
   },
+  // --- Near-Pool Villas (Building A) ---
   {
-    id: "aqua-vista-jacuzzi",
-    name: "Aqua Vista with Jacuzzi",
-    description: "Water-facing suite with a private jacuzzi for two.",
+    id: "villa-a3",
+    name: "Villa A3",
+    description: "Our most exclusive near-pool villa — a secluded king-bed haven steps from the pool.",
     longDescription:
-      "Wake to the river and unwind in your own private jacuzzi. The Aqua Vista with Jacuzzi suite is designed for couples seeking romance and relaxation, with uninterrupted water views from every corner.",
-    price: 8000,
-    image: "/images/rooms/aqua-vista-jacuzzi/1.jpg",
-    gallery: [
-      "/images/rooms/aqua-vista-jacuzzi/1.jpg",
-      "/images/rooms/aqua-vista-jacuzzi/2.jpg",
-    ],
-    capacity: 2,
-    size: "Water-facing Suite",
-    features: ["Private jacuzzi", "River view", "Queen bed", "Lounge area"],
-  },
-  {
-    id: "aqua-vista-suite",
-    name: "Aqua Vista Suite",
-    description: "Serene suite framing uninterrupted views of the water.",
-    longDescription:
-      "The Aqua Vista Suite places you right at the water's edge, with floor-to-ceiling views of the river and a calm, contemporary interior. The perfect base for a peaceful Kerala escape.",
-    price: 7000,
+      "The finest villa in the A-block complex, Villa A3 offers a king-size bed, premium finishes and direct pool access within a lush, landscaped setting. A rare combination of privacy and resort living at its finest.",
+    price: 70000,
     image: "/images/rooms/aqua-vista/1.jpg",
     gallery: [
       "/images/rooms/aqua-vista/1.jpg",
@@ -116,64 +84,188 @@ export const rooms: Room[] = [
       "/images/rooms/aqua-vista/4.jpg",
     ],
     capacity: 2,
-    size: "Water-facing Suite",
-    features: ["River view", "Queen bed", "Sitting area", "Modern bath"],
+    size: "Pool-side Villa",
+    features: ["Pool access", "King bed", "Premium finishes", "Garden setting"],
   },
   {
-    id: "premium-suite",
-    name: "Premium Suite",
-    description: "Spacious, elegantly appointed suite with garden views.",
+    id: "villa-a2",
+    name: "Villa A2",
+    description: "Spacious near-pool villa with three king-size beds — perfect for families and groups.",
     longDescription:
-      "Generously sized and beautifully finished, the Premium Suite offers a refined retreat with plush bedding, a comfortable lounge and serene garden views — comfort and elegance in equal measure.",
-    price: 5500,
-    // No dedicated photoset yet — using resort property shots as a tasteful placeholder.
-    image: "/images/landscape/8.jpg",
-    gallery: ["/images/landscape/8.jpg", "/images/landscape/9.jpg"],
-    capacity: 2,
-    size: "Premium Suite",
-    features: ["Garden view", "King bed", "Lounge corner", "Premium amenities"],
-  },
-  {
-    id: "heritage-suite",
-    name: "Heritage Suite",
-    description: "Traditional Kerala charm with all the modern comforts.",
-    longDescription:
-      "Steeped in Kerala heritage, this suite features handcrafted woodwork and warm, earthy tones alongside every modern comfort. A cosy and characterful stay for couples and solo travellers.",
-    price: 5000,
-    image: "/images/rooms/heritage-suite/1.jpg",
-    gallery: ["/images/rooms/heritage-suite/1.jpg"],
-    capacity: 2,
-    size: "Heritage Suite",
-    features: ["Heritage decor", "Queen bed", "Sitting area", "En-suite bath"],
-  },
-  {
-    id: "classic-suite",
-    name: "Classic Suite",
-    description: "Comfortable, well-appointed suite for a relaxed stay.",
-    longDescription:
-      "The Classic Suite delivers easy comfort and understated style, with a restful bedroom, modern bath and the signature Riverscape calm. An ideal choice for an unhurried getaway.",
-    price: 5000,
-    image: "/images/rooms/classic-suite/1.jpg",
-    gallery: ["/images/rooms/classic-suite/1.jpg"],
-    capacity: 2,
-    size: "Classic Suite",
-    features: ["Queen bed", "Work nook", "Modern bath", "Resort access"],
-  },
-  {
-    id: "aqua-vista-interconnected",
-    name: "Aqua Vista Interconnected",
-    description: "Two interconnected water-facing suites — ideal for families & groups.",
-    longDescription:
-      "Designed for families and groups, the Aqua Vista Interconnected pairs two water-facing suites with a connecting door, sleeping four adults in comfort. Share the views, keep your privacy. Priced for 4 adults sharing.",
-    price: 13000,
+      "The largest villa in the A-block, Villa A2 accommodates up to six guests across three king-size beds with direct pool access. A warm, resort-contemporary interior and generous living spaces make this ideal for families or groups travelling together.",
+    price: 30000,
     image: "/images/rooms/aqua-vista-interconnected/1.jpg",
     gallery: [
       "/images/rooms/aqua-vista-interconnected/1.jpg",
       "/images/rooms/aqua-vista-interconnected/2.jpg",
     ],
+    capacity: 6,
+    size: "Pool-side Villa",
+    features: ["3 King beds", "Pool access", "Sleeps 6", "Spacious layout"],
+  },
+  {
+    id: "villa-a1",
+    name: "Villa A1",
+    description: "Elegant near-pool villa with a king bed and direct pool access.",
+    longDescription:
+      "Villa A1 opens onto the A-block pool area, offering a king-size bed and a calm, contemporary interior. Part of the two-building near-pool complex, this villa pairs resort facilities with genuine seclusion. Book all A-block villas together for ₹30,000.",
+    price: 10000,
+    image: "/images/rooms/aqua-vista-jacuzzi/1.jpg",
+    gallery: [
+      "/images/rooms/aqua-vista-jacuzzi/1.jpg",
+      "/images/rooms/aqua-vista-jacuzzi/2.jpg",
+    ],
+    capacity: 2,
+    size: "Pool-side Villa",
+    features: ["Pool access", "King bed", "Garden setting"],
+  },
+  {
+    id: "villa-a4",
+    name: "Villa A4",
+    description: "Tranquil near-pool villa with a king bed — a serene escape by the water.",
+    longDescription:
+      "Set within the landscaped A-block compound, Villa A4 provides a peaceful king-bed retreat with easy pool access. Thoughtfully designed to blend into the natural surroundings, it is the perfect base for guests who want nature and comfort in equal measure.",
+    price: 10000,
+    image: "/images/rooms/heritage-pool-villa/1.jpg",
+    gallery: [
+      "/images/rooms/heritage-pool-villa/1.jpg",
+      "/images/rooms/heritage-pool-villa/2.jpg",
+    ],
+    capacity: 2,
+    size: "Pool-side Villa",
+    features: ["Pool access", "King bed", "Garden setting"],
+  },
+  // --- Floor Rooms with Private Pool ---
+  {
+    id: "room-101",
+    name: "Room 101",
+    description: "Premium king room with a private pool — a riverside haven for two.",
+    longDescription:
+      "Room 101 is a premium king room with its own private pool, set in the main building of the resort. Rich finishes, warm natural materials and attentive service define your stay. Book Rooms 101 & 102 together for a combined rate of ₹10,000.",
+    price: 7000,
+    image: "/images/rooms/heritage-suite/1.jpg",
+    gallery: ["/images/rooms/heritage-suite/1.jpg"],
+    capacity: 2,
+    size: "Premium Room",
+    features: ["Private pool", "King bed", "Premium finishes"],
+  },
+  {
+    id: "room-102",
+    name: "Room 102",
+    description: "Spacious twin-king room with a private pool — ideal for families.",
+    longDescription:
+      "Room 102 offers two king-size beds and a private pool, making it one of Riverscape's most versatile stays. Perfect for families or friends. Book Rooms 101 & 102 together for a combined rate of ₹10,000.",
+    price: 5000,
+    image: "/images/rooms/classic-suite/1.jpg",
+    gallery: ["/images/rooms/classic-suite/1.jpg"],
     capacity: 4,
-    size: "Two Interconnected Suites",
-    features: ["Sleeps 4 adults", "Interconnected", "River views", "Two bathrooms"],
+    size: "Twin King Room",
+    features: ["Private pool", "2 King beds", "Spacious layout"],
+  },
+  // --- Premium Rooms (7011–7018) ---
+  {
+    id: "room-7011",
+    name: "Room 7011",
+    description: "Premium king room with full resort access and refined amenities.",
+    longDescription:
+      "Room 7011 is a well-appointed premium room with a king-size bed and all Riverscape comforts — attentive service, resort-wide access and the serene atmosphere of Kalady Neeleswaram.",
+    price: 4000,
+    image: "/images/landscape/8.jpg",
+    gallery: ["/images/landscape/8.jpg", "/images/landscape/9.jpg"],
+    capacity: 2,
+    size: "Premium Room",
+    features: ["King bed", "Premium amenities", "Resort access"],
+  },
+  {
+    id: "room-7012",
+    name: "Room 7012",
+    description: "Premium king room with full resort access and refined amenities.",
+    longDescription:
+      "Room 7012 provides a comfortable king-bed stay with full resort access. Warm interiors and the hallmark Riverscape calm make it an ideal retreat.",
+    price: 5000,
+    image: "/images/landscape/2.jpg",
+    gallery: ["/images/landscape/2.jpg", "/images/landscape/5.jpg"],
+    capacity: 2,
+    size: "Premium Room",
+    features: ["King bed", "Premium amenities", "Resort access"],
+  },
+  {
+    id: "room-7013",
+    name: "Room 7013",
+    description: "Premium king room with full resort access and refined amenities.",
+    longDescription:
+      "Room 7013 is a serene premium room with a king-size bed and a comfortable lounge area, with full access to all Riverscape facilities.",
+    price: 5000,
+    image: "/images/landscape/3.jpg",
+    gallery: ["/images/landscape/3.jpg", "/images/landscape/6.jpg"],
+    capacity: 2,
+    size: "Premium Room",
+    features: ["King bed", "Premium amenities", "Resort access"],
+  },
+  {
+    id: "room-7014",
+    name: "Room 7014",
+    description: "Premium king room with full resort access and refined amenities.",
+    longDescription:
+      "Room 7014 offers a restful king-bed retreat within the Riverscape complex, with access to the resort's gardens, pool and dining.",
+    price: 5000,
+    image: "/images/landscape/4.jpg",
+    gallery: ["/images/landscape/4.jpg", "/images/landscape/7.jpg"],
+    capacity: 2,
+    size: "Premium Room",
+    features: ["King bed", "Premium amenities", "Resort access"],
+  },
+  {
+    id: "room-7015",
+    name: "Room 7015",
+    description: "Premium king room with full resort access and refined amenities.",
+    longDescription:
+      "Room 7015 provides a peaceful base for exploring Kerala, with a king-size bed and the full suite of Riverscape amenities on your doorstep.",
+    price: 5000,
+    image: "/images/landscape/10.jpg",
+    gallery: ["/images/landscape/10.jpg"],
+    capacity: 2,
+    size: "Premium Room",
+    features: ["King bed", "Premium amenities", "Resort access"],
+  },
+  {
+    id: "room-7016",
+    name: "Room 7016",
+    description: "Premium king room with full resort access and refined amenities.",
+    longDescription:
+      "Room 7016 is a thoughtfully appointed premium room with a king-size bed, modern bath and access to the entire Riverscape resort.",
+    price: 4000,
+    image: "/images/landscape/1.jpg",
+    gallery: ["/images/landscape/1.jpg"],
+    capacity: 2,
+    size: "Premium Room",
+    features: ["King bed", "Premium amenities", "Resort access"],
+  },
+  {
+    id: "room-7017",
+    name: "Room 7017",
+    description: "Comfortable king room with full resort access.",
+    longDescription:
+      "Room 7017 is a comfortable king-bed room set within the resort, offering all Riverscape facilities at an attractive rate.",
+    price: 3500,
+    image: "/images/landscape/5.jpg",
+    gallery: ["/images/landscape/5.jpg"],
+    capacity: 2,
+    size: "Premium Room",
+    features: ["King bed", "Premium amenities", "Resort access"],
+  },
+  {
+    id: "room-7018",
+    name: "Room 7018",
+    description: "Comfortable king room with full resort access.",
+    longDescription:
+      "Room 7018 provides a relaxed and comfortable stay with a king-size bed and full resort access — a great choice for guests looking to experience Riverscape at an accessible price.",
+    price: 3500,
+    image: "/images/landscape/6.jpg",
+    gallery: ["/images/landscape/6.jpg"],
+    capacity: 2,
+    size: "Premium Room",
+    features: ["King bed", "Premium amenities", "Resort access"],
   },
 ];
 
@@ -256,21 +348,21 @@ export const testimonials: Testimonial[] = [
 
 export const galleryImages: GalleryImage[] = [
   { src: "/images/landscape/1.jpg", alt: "Riverscape resort at the water's edge", span: "wide" },
-  { src: "/images/rooms/premium-pool-villa/2.jpg", alt: "Premium Pool Villa", span: "tall" },
+  { src: "/images/rooms/premium-pool-villa/2.jpg", alt: "Pool Villa", span: "tall" },
   { src: "/images/landscape/3.jpg", alt: "Riverside grounds", span: "normal" },
-  { src: "/images/rooms/aqua-vista/2.jpg", alt: "Aqua Vista Suite", span: "normal" },
-  { src: "/images/rooms/heritage-pool-villa/1.jpg", alt: "Heritage Pool Villa", span: "tall" },
+  { src: "/images/rooms/aqua-vista/2.jpg", alt: "Villa A3", span: "normal" },
+  { src: "/images/rooms/heritage-pool-villa/1.jpg", alt: "Villa A4", span: "tall" },
   { src: "/images/landscape/4.jpg", alt: "Kerala backwaters view", span: "wide" },
-  { src: "/images/rooms/aqua-vista-jacuzzi/1.jpg", alt: "Aqua Vista with Jacuzzi", span: "normal" },
+  { src: "/images/rooms/aqua-vista-jacuzzi/1.jpg", alt: "Villa A1", span: "normal" },
   { src: "/images/landscape/6.jpg", alt: "Lush riverside landscape", span: "normal" },
-  { src: "/images/rooms/premium-pool-villa/4.jpg", alt: "Pool villa interiors", span: "tall" },
+  { src: "/images/rooms/premium-pool-villa/4.jpg", alt: "Pool Villa interiors", span: "tall" },
   { src: "/images/landscape/10.jpg", alt: "Evening by the river", span: "normal" },
-  { src: "/images/rooms/aqua-vista/3.jpg", alt: "Water-facing suite", span: "wide" },
+  { src: "/images/rooms/aqua-vista/3.jpg", alt: "Villa A3 interiors", span: "wide" },
   { src: "/images/landscape/8.jpg", alt: "Resort property views", span: "normal" },
-  { src: "/images/rooms/heritage-suite/1.jpg", alt: "Heritage Suite", span: "normal" },
+  { src: "/images/rooms/heritage-suite/1.jpg", alt: "Room 101", span: "normal" },
   { src: "/images/landscape/7.jpg", alt: "Reflections on the water", span: "tall" },
-  { src: "/images/rooms/classic-suite/1.jpg", alt: "Classic Suite", span: "normal" },
-  { src: "/images/rooms/aqua-vista-interconnected/1.jpg", alt: "Aqua Vista Interconnected", span: "wide" },
+  { src: "/images/rooms/classic-suite/1.jpg", alt: "Room 102", span: "normal" },
+  { src: "/images/rooms/aqua-vista-interconnected/1.jpg", alt: "Villa A2", span: "wide" },
   { src: "/images/landscape/9.jpg", alt: "Riverscape at dusk", span: "normal" },
   { src: "/images/rooms/premium-pool-villa/6.jpg", alt: "Private pool deck", span: "normal" },
 ];

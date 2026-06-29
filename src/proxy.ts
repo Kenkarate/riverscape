@@ -31,5 +31,10 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/admin/:path*", "/api/admin/:path*"],
+  matcher: [
+    // /admin root and all sub-paths except /admin/login
+    "/admin",
+    "/admin/((?!login$).+)",
+    "/api/admin/:path*",
+  ],
 };

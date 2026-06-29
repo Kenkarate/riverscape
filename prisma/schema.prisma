@@ -179,14 +179,16 @@ model User {
   role          Role      @default(GUEST)
   emailVerified DateTime?
   image         String?
+  salesColor    String?   // hex color e.g. "#0d9488"
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  accounts  Account[]
-  sessions  Session[]
-  guest     Guest?
-  bookings  Booking[]  @relation("BookingCreatedBy")
-  auditLogs AuditLog[]
+  accounts         Account[]
+  sessions         Session[]
+  guest            Guest?
+  bookings         Booking[]         @relation("BookingCreatedBy")
+  auditLogs        AuditLog[]
+  salesAllocations SalesAllocation[]
 
   @@index([role])
 }
@@ -242,6 +244,7 @@ model Property {
   addons    Addon[]
   bookings  Booking[]
   channels  Channel[]
+  salesAllocations SalesAllocation[]
 }
 
 // ─── Room Types (logical) ─────────────────────────────────────────────────────
@@ -274,6 +277,7 @@ model RoomType {
   channelInv   ChannelInventory[]
   channelRates ChannelRate[]
   holds        InventoryHold[]
+  salesAllocations SalesAllocation[]
 
   @@index([propertyId])
 }
@@ -385,6 +389,29 @@ model InventoryHold {
 
   @@index([roomTypeId, checkIn, checkOut])
   @@index([status, expiresAt])
+}
+
+// ─── Sales Allocations ────────────────────────────────────────────────────────
+// Sales staff "hold" blocks of rooms for group bookings, travel agents, etc.
+
+model SalesAllocation {
+  id          String   @id @default(cuid())
+  propertyId  String
+  property    Property @relation(fields: [propertyId], references: [id])
+  roomTypeId  String
+  roomType    RoomType @relation(fields: [roomTypeId], references: [id])
+  checkIn     DateTime @db.Date
+  checkOut    DateTime @db.Date
+  units       Int      @default(1)
+  label       String?
+  status      String   @default("ACTIVE") // ACTIVE | RELEASED
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([roomTypeId, checkIn, checkOut])
+  @@index([propertyId, status])
 }
 
 // ─── Bookings ─────────────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@
 
 import { signOut } from "next-auth/react";
 import { LogOut, User } from "lucide-react";
+import UserColorPicker from "@/components/admin/user-color-picker";
 
 interface TopbarProps {
   user: {
@@ -9,6 +10,7 @@ interface TopbarProps {
     email?: string | null;
     role?: string | null;
   };
+  salesColor?: string | null;
 }
 
 const roleLabels: Record<string, string> = {
@@ -17,7 +19,7 @@ const roleLabels: Record<string, string> = {
   STAFF: "Staff",
 };
 
-export default function AdminTopbar({ user }: TopbarProps) {
+export default function AdminTopbar({ user, salesColor }: TopbarProps) {
   return (
     <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0">
       <div />
@@ -29,6 +31,7 @@ export default function AdminTopbar({ user }: TopbarProps) {
             {roleLabels[user.role ?? "STAFF"] ?? user.role}
           </span>
         </div>
+        <UserColorPicker initialColor={salesColor ?? null} />
         <button
           onClick={() => signOut({ callbackUrl: "/admin/login" })}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-red-600 transition-colors"

@@ -1,8 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Cormorant_Garamond, Inter } from "next/font/google";
 import "./globals.css";
-import { Navbar } from "@/components/navbar";
-import { Footer } from "@/components/footer";
 
 const cormorant = Cormorant_Garamond({
   subsets: ["latin"],
@@ -56,9 +54,7 @@ export default function RootLayout({
         <link rel="preload" as="image" href="/images/landscape/1.jpg" fetchPriority="high" />
       </head>
       <body className="antialiased">
-        <Navbar />
-        <main>{children}</main>
-        <Footer />
+        {children}
       </body>
     </html>
   );

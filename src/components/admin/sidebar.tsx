@@ -9,9 +9,12 @@ import {
   Building2,
   BarChart3,
   Globe,
-  Tag,
   Settings,
   Percent,
+  Users,
+  Sparkles,
+  ClipboardList,
+  UserCog,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -19,11 +22,15 @@ const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },
   { href: "/admin/allocation", label: "Allocation", icon: CalendarDays, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },
   { href: "/admin/bookings", label: "Bookings", icon: BookOpen, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },
+  { href: "/admin/guests", label: "Guests", icon: Users, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },
   { href: "/admin/rooms", label: "Rooms", icon: Building2, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },
+  { href: "/admin/housekeeping", label: "Housekeeping", icon: Sparkles, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },
   { href: "/admin/rates", label: "Rate Plans", icon: Percent, roles: ["ADMIN", "SUPER_ADMIN"] },
   { href: "/admin/channels", label: "Channels", icon: Globe, roles: ["ADMIN", "SUPER_ADMIN"] },
   { href: "/admin/reports", label: "Reports", icon: BarChart3, roles: ["ADMIN", "SUPER_ADMIN"] },
+  { href: "/admin/audit", label: "Audit Log", icon: ClipboardList, roles: ["ADMIN", "SUPER_ADMIN"] },
   { href: "/admin/settings", label: "Settings", icon: Settings, roles: ["SUPER_ADMIN"] },
+  { href: "/admin/staff", label: "Staff", icon: UserCog, roles: ["SUPER_ADMIN"] },
 ];
 
 interface AdminSidebarProps {

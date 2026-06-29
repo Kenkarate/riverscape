@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarDays, Users, BedDouble, MessageCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { CalendarDays, Users, BedDouble, MessageCircle, ArrowRight } from "lucide-react";
 import { ROOM_TYPES, waLink } from "@/lib/data";
 import { FadeIn } from "@/components/animations";
 
@@ -17,6 +18,7 @@ function nights(checkin: string, checkout: string) {
 
 export function AvailabilityChecker() {
   const today = new Date().toISOString().split("T")[0];
+  const router = useRouter();
 
   const [checkin, setCheckin] = useState("");
   const [checkout, setCheckout] = useState("");
@@ -24,6 +26,18 @@ export function AvailabilityChecker() {
   const [roomType, setRoomType] = useState("");
 
   const numNights = nights(checkin, checkout);
+  const canReserve = numNights > 0;
+
+  function handleReserve() {
+    if (!canReserve) return;
+    const qs = new URLSearchParams({
+      checkIn: checkin,
+      checkOut: checkout,
+      adults: String(guests),
+      children: "0",
+    });
+    router.push(`/book/rooms?${qs.toString()}`);
+  }
 
   function handleCheck() {
     const msg = [
@@ -42,7 +56,7 @@ export function AvailabilityChecker() {
   }
 
   return (
-    <section className="bg-cream px-4 pt-8 pb-10">
+    <section id="availability" className="scroll-mt-24 bg-cream px-4 pt-8 pb-10">
       <FadeIn>
         <div className="mx-auto max-w-5xl">
           {/* Label */}
@@ -132,16 +146,28 @@ export function AvailabilityChecker() {
             {/* CTA */}
             <div className="flex flex-col items-center justify-between gap-3 border-t border-forest/6 bg-cream/40 px-6 py-4 sm:flex-row">
               <p className="text-xs text-forest/45">
-                No payment required — we&apos;ll confirm dates and pricing on WhatsApp.
+                Book instantly online, or enquire on WhatsApp — no payment required to ask.
               </p>
-              <button
-                type="button"
-                onClick={handleCheck}
-                className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-full bg-forest px-7 py-3 text-sm font-medium tracking-wide text-cream shadow-md shadow-forest/20 transition-all duration-300 hover:-translate-y-0.5 hover:bg-forest-light sm:w-auto"
-              >
-                <MessageCircle size={16} />
-                Check Availability
-              </button>
+              <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+                <button
+                  type="button"
+                  onClick={handleCheck}
+                  className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-full border border-forest/30 px-7 py-3 text-sm font-medium tracking-wide text-forest transition-all duration-300 hover:bg-forest hover:text-cream sm:w-auto"
+                >
+                  <MessageCircle size={16} />
+                  Ask on WhatsApp
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReserve}
+                  disabled={!canReserve}
+                  title={canReserve ? undefined : "Select check-in and check-out dates first"}
+                  className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-full bg-forest px-7 py-3 text-sm font-medium tracking-wide text-cream shadow-md shadow-forest/20 transition-all duration-300 hover:-translate-y-0.5 hover:bg-forest-light disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 sm:w-auto"
+                >
+                  Reserve Online
+                  <ArrowRight size={16} />
+                </button>
+              </div>
             </div>
           </div>
         </div>

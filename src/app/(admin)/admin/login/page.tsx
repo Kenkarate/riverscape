@@ -6,6 +6,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { Check } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { SALES_COLOR_PALETTE } from "@/lib/sales-colors";
 
 const schema = z.object({
   email: z.string().email("Invalid email"),
@@ -19,6 +22,7 @@ export default function AdminLoginPage() {
   const callbackUrl = searchParams.get("callbackUrl") ?? "/admin";
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [color, setColor] = useState<string>(SALES_COLOR_PALETTE[0]);
 
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -36,6 +40,12 @@ export default function AdminLoginPage() {
     if (result?.error) {
       setError("Invalid email or password");
     } else {
+      // Persisted by <PendingColorSync /> once the admin app loads.
+      try {
+        sessionStorage.setItem("pendingColor", color);
+      } catch {
+        /* sessionStorage may be unavailable — color is optional */
+      }
       router.push(callbackUrl);
       router.refresh();
     }
@@ -70,6 +80,32 @@ export default function AdminLoginPage() {
               {...register("password")}
             />
             {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password.message}</p>}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Your color</label>
+            <div className="flex flex-wrap items-center gap-2">
+              {SALES_COLOR_PALETTE.map((hex) => {
+                const active = color.toLowerCase() === hex.toLowerCase();
+                return (
+                  <button
+                    key={hex}
+                    type="button"
+                    onClick={() => setColor(hex)}
+                    aria-label={`Select color ${hex}`}
+                    title={hex}
+                    className={cn(
+                      "w-7 h-7 rounded-full inline-flex items-center justify-center transition-transform hover:scale-110",
+                      active ? "ring-2 ring-offset-2 ring-gray-800" : "ring-1 ring-black/10"
+                    )}
+                    style={{ backgroundColor: hex }}
+                  >
+                    {active && <Check size={14} className="text-white" />}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-gray-400 mt-1.5">Used to tag your room allocations on the chart.</p>
           </div>
 
           {error && (

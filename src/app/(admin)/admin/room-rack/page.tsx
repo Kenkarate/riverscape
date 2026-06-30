@@ -6,8 +6,6 @@ import RoomRackGrid, { type RackEntry } from "@/components/admin/room-rack-grid"
 
 export const dynamic = "force-dynamic";
 
-const DAYS = 14;
-
 function addDays(d: Date, n: number) {
   const r = new Date(d);
   r.setDate(r.getDate() + n);
@@ -15,16 +13,44 @@ function addDays(d: Date, n: number) {
 }
 
 function toISO(d: Date) {
-  return d.toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
-function shortDate(d: Date) {
-  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+/** Returns { year, month } from a "YYYY-MM" string, defaulting to current month */
+function parseMonthParam(param?: string): { year: number; month: number } {
+  if (param && /^\d{4}-\d{2}$/.test(param)) {
+    const [y, m] = param.split("-").map(Number);
+    if (m >= 1 && m <= 12) return { year: y, month: m };
+  }
+  const now = new Date();
+  return { year: now.getFullYear(), month: now.getMonth() + 1 };
 }
 
-async function getRackData(startDate: Date) {
-  const endDate = addDays(startDate, DAYS);
-  const dates = Array.from({ length: DAYS }, (_, i) => toISO(addDays(startDate, i)));
+function monthLabel(year: number, month: number) {
+  return new Date(year, month - 1, 1).toLocaleDateString("en-IN", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function prevMonth(year: number, month: number) {
+  const d = new Date(year, month - 2, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function nextMonth(year: number, month: number) {
+  const d = new Date(year, month, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+async function getRackData(year: number, month: number) {
+  const startDate = new Date(year, month - 1, 1);
+  const endDate = new Date(year, month, 1); // first day of next month
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const dates = Array.from({ length: daysInMonth }, (_, i) => toISO(addDays(startDate, i)));
   const dateSet = new Set(dates);
 
   const property = await prisma.property.findFirst({ select: { id: true } });
@@ -125,7 +151,7 @@ async function getRackData(startDate: Date) {
 }
 
 interface SearchParams {
-  start?: string;
+  month?: string;
 }
 
 export default async function RoomRackPage({
@@ -134,21 +160,16 @@ export default async function RoomRackPage({
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
+  const { year, month } = parseMonthParam(sp.month);
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-
-  let startDate = today;
-  if (sp.start) {
-    const parsed = new Date(sp.start);
-    if (!isNaN(parsed.getTime())) startDate = parsed;
-  }
 
   let data: Awaited<ReturnType<typeof getRackData>> = null;
   let dbError = false;
 
   try {
-    data = await getRackData(startDate);
+    data = await getRackData(year, month);
   } catch {
     dbError = true;
   }
@@ -165,14 +186,17 @@ export default async function RoomRackPage({
     );
   }
 
-  const dates = Array.from({ length: DAYS }, (_, i) => toISO(addDays(startDate, i)));
-  const prevStart = toISO(addDays(startDate, -DAYS));
-  const nextStart = toISO(addDays(startDate, DAYS));
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const dates = Array.from(
+    { length: daysInMonth },
+    (_, i) => toISO(new Date(year, month - 1, i + 1))
+  );
   const todayStr = toISO(today);
+  const currentMonthParam = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  const thisMonthParam = `${year}-${String(month).padStart(2, "0")}`;
+  const isCurrentMonth = thisMonthParam === currentMonthParam;
 
-  const hasContent = data && data.rooms.length > 0;
-
-  if (!hasContent) {
+  if (!data || data.rooms.length === 0) {
     return (
       <div className="space-y-4">
         <h1 className="text-xl font-semibold text-gray-900">Room Rack</h1>
@@ -196,46 +220,45 @@ export default async function RoomRackPage({
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Room Rack</h1>
           <p className="text-xs text-gray-400 mt-0.5">
-            Physical room booking rack — click a chip to manage a booking, or an empty cell to
-            create one.
+            Monthly view — click a chip to manage, or an empty cell to create a booking.
           </p>
         </div>
 
-        {/* Date navigation — full-width row on mobile, inline on desktop */}
+        {/* Month navigation */}
         <div className="flex items-center gap-2">
           <Link
-            href={`/admin/room-rack?start=${prevStart}`}
-            className="flex-1 sm:flex-none flex items-center justify-center p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500"
-            aria-label="Previous period"
+            href={`/admin/room-rack?month=${prevMonth(year, month)}`}
+            className="flex items-center justify-center p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500"
+            aria-label="Previous month"
           >
             <ChevronLeft size={16} />
           </Link>
-          <span className="text-sm text-gray-600 whitespace-nowrap text-center min-w-[130px]">
-            {shortDate(startDate)} – {shortDate(addDays(startDate, DAYS - 1))}
+          <span className="text-sm font-medium text-gray-700 whitespace-nowrap text-center min-w-[150px]">
+            {monthLabel(year, month)}
           </span>
           <Link
-            href={`/admin/room-rack?start=${nextStart}`}
-            className="flex-1 sm:flex-none flex items-center justify-center p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500"
-            aria-label="Next period"
+            href={`/admin/room-rack?month=${nextMonth(year, month)}`}
+            className="flex items-center justify-center p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500"
+            aria-label="Next month"
           >
             <ChevronRight size={16} />
           </Link>
-          {toISO(startDate) !== todayStr && (
+          {!isCurrentMonth && (
             <Link
               href="/admin/room-rack"
               className="text-xs px-3 py-1.5 bg-[#1a3a2a] text-white rounded-lg hover:bg-[#14301f] transition-colors whitespace-nowrap"
             >
-              Today
+              This Month
             </Link>
           )}
         </div>
       </div>
 
       <RoomRackGrid
-        rooms={data!.rooms}
+        rooms={data.rooms}
         dates={dates}
-        cellMap={data!.cellMap}
-        role={data!.role}
+        cellMap={data.cellMap}
+        role={data.role}
         todayStr={todayStr}
       />
     </div>

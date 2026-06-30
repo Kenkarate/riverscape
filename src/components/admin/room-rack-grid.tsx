@@ -121,10 +121,10 @@ function isWeekend(iso: string) {
   return g === 0 || g === 6;
 }
 
-// Progressive disclosure of columns: 7 on mobile, 10 on tablet, 14 on desktop.
+// Progressive disclosure: 10 days on mobile, 20 on tablet, all on desktop.
 function colVisibility(i: number) {
-  if (i < 7) return "";
-  if (i < 10) return "hidden md:table-cell";
+  if (i < 10) return "";
+  if (i < 20) return "hidden md:table-cell";
   return "hidden lg:table-cell";
 }
 
@@ -390,17 +390,17 @@ export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: 
                     <th
                       key={iso}
                       className={cn(
-                        "sticky top-0 z-20 px-1 py-2 text-center font-medium w-[80px] min-w-[80px] sm:w-[120px] sm:min-w-[120px] border-b border-r border-gray-100",
+                        "sticky top-0 z-20 px-0.5 py-1.5 text-center font-medium w-[44px] min-w-[44px] sm:w-[56px] sm:min-w-[56px] lg:w-[72px] lg:min-w-[72px] border-b border-r border-gray-100",
                         today ? "bg-amber-100 text-[#1a3a2a]" : "bg-gray-50 text-gray-500",
                         colVisibility(i)
                       )}
                     >
-                      <div>{dayLabel(iso)}</div>
                       <div
-                        className={cn("font-semibold", today ? "text-[#1a3a2a]" : "text-gray-700")}
+                        className={cn("text-[11px] font-bold leading-tight", today ? "text-[#1a3a2a]" : "text-gray-700")}
                       >
                         {dayNum(iso)}
                       </div>
+                      <div className="text-[9px] opacity-60 leading-tight">{dayLabel(iso)}</div>
                     </th>
                   );
                 })}
@@ -447,7 +447,7 @@ export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: 
                             key={iso}
                             onClick={isEmpty ? () => openCreatePanel(room, iso) : undefined}
                             className={cn(
-                              "h-14 w-[80px] min-w-[80px] sm:w-[120px] sm:min-w-[120px] align-middle px-0.5 border-b border-r border-gray-100",
+                              "h-12 w-[44px] min-w-[44px] sm:w-[56px] sm:min-w-[56px] lg:w-[72px] lg:min-w-[72px] align-middle px-0.5 border-b border-r border-gray-100",
                               today ? "bg-amber-50/60" : "",
                               isEmpty ? "cursor-pointer hover:bg-[#1a3a2a]/5 group/cell" : "",
                               colVisibility(i)
@@ -480,23 +480,19 @@ export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: 
                                           TONE_CHIP[tone]
                                         )}
                                       >
-                                        {/* Mobile: coloured dot + short name */}
-                                        <span className="sm:hidden flex items-center gap-1 overflow-hidden">
-                                          <span
-                                            className={cn(
-                                              "w-2 h-2 rounded-full shrink-0",
-                                              TONE_DOT[tone]
-                                            )}
-                                          />
-                                          <span className="text-[10px] font-medium truncate leading-tight">
-                                            {e.guestName.split(" ")[0]}
-                                          </span>
+                                        {/* Mobile: dot only */}
+                                        <span className="sm:hidden flex items-center justify-center">
+                                          <span className={cn("w-2 h-2 rounded-full", TONE_DOT[tone])} />
+                                        </span>
+                                        {/* Tablet: first name only */}
+                                        <span className="hidden sm:block lg:hidden font-semibold text-[10px] truncate leading-tight">
+                                          {e.guestName.split(" ")[0]}
                                         </span>
                                         {/* Desktop: full name + ref */}
-                                        <span className="hidden sm:block font-semibold text-[11px] truncate leading-tight">
+                                        <span className="hidden lg:block font-semibold text-[11px] truncate leading-tight">
                                           {e.guestName}
                                         </span>
-                                        <span className="hidden sm:block text-[10px] opacity-60 truncate font-mono leading-tight">
+                                        <span className="hidden lg:block text-[9px] opacity-60 truncate font-mono leading-tight">
                                           {e.bookingRef}
                                         </span>
                                       </button>

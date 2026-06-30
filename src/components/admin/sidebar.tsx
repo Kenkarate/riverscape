@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 import {
   LayoutDashboard,
   LayoutGrid,
@@ -15,8 +16,10 @@ import {
   Sparkles,
   ClipboardList,
   UserCog,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useMobileNav } from "@/components/admin/mobile-nav-context";
 
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, roles: ["SALES", "STAFF", "ADMIN", "SUPER_ADMIN"] },
@@ -39,54 +42,114 @@ interface AdminSidebarProps {
   pendingCount?: number;
 }
 
-export default function AdminSidebar({ role, pendingCount = 0 }: AdminSidebarProps) {
+function SidebarNav({
+  role,
+  pendingCount,
+  onNavigate,
+}: {
+  role?: string | null;
+  pendingCount: number;
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
-
-  const visible = navItems.filter((item) =>
-    item.roles.includes(role ?? "STAFF")
-  );
+  const visible = navItems.filter((item) => item.roles.includes(role ?? "STAFF"));
 
   return (
-    <aside className="w-56 bg-[#1a3a2a] text-white flex flex-col shrink-0">
-      <div className="px-5 py-5 border-b border-white/10">
-        <span className="font-serif text-lg font-semibold">Riverscape</span>
-        <span className="block text-xs text-white/50 mt-0.5">Admin Portal</span>
-      </div>
+    <nav className="flex-1 py-4 space-y-0.5 px-2 overflow-y-auto">
+      {visible.map((item) => {
+        const Icon = item.icon;
+        const active =
+          item.href === "/admin" ? pathname === "/admin" : pathname.startsWith(item.href);
+        const showBadge = item.href === "/admin/staff" && pendingCount > 0;
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            onClick={onNavigate}
+            className={cn(
+              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
+              active
+                ? "bg-white/15 text-white font-medium"
+                : "text-white/70 hover:bg-white/10 hover:text-white"
+            )}
+          >
+            <Icon size={16} />
+            <span className="flex-1">{item.label}</span>
+            {showBadge && (
+              <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none">
+                {pendingCount}
+              </span>
+            )}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
 
-      <nav className="flex-1 py-4 space-y-0.5 px-2">
-        {visible.map((item) => {
-          const Icon = item.icon;
-          const active =
-            item.href === "/admin"
-              ? pathname === "/admin"
-              : pathname.startsWith(item.href);
-          const showBadge = item.href === "/admin/staff" && pendingCount > 0;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
-                active
-                  ? "bg-white/15 text-white font-medium"
-                  : "text-white/70 hover:bg-white/10 hover:text-white"
-              )}
+export default function AdminSidebar({ role, pendingCount = 0 }: AdminSidebarProps) {
+  const { isOpen, close } = useMobileNav();
+  const pathname = usePathname();
+
+  // Auto-close the mobile drawer whenever the route changes.
+  useEffect(() => {
+    close();
+  }, [pathname, close]);
+
+  return (
+    <>
+      {/* ─── Desktop sidebar (static) ──────────────────────────────────────── */}
+      <aside className="hidden lg:flex w-56 bg-[#1a3a2a] text-white flex-col shrink-0">
+        <div className="px-5 py-5 border-b border-white/10">
+          <span className="font-serif text-lg font-semibold">Riverscape</span>
+          <span className="block text-xs text-white/50 mt-0.5">Admin Portal</span>
+        </div>
+        <SidebarNav role={role} pendingCount={pendingCount} />
+        <div className="px-5 py-4 border-t border-white/10 text-xs text-white/40">
+          Riverscape PMS v1.0
+        </div>
+      </aside>
+
+      {/* ─── Mobile drawer ─────────────────────────────────────────────────── */}
+      <div
+        className={cn("fixed inset-0 z-50 lg:hidden", isOpen ? "" : "pointer-events-none")}
+        aria-hidden={!isOpen}
+      >
+        {/* Backdrop */}
+        <div
+          onClick={close}
+          className={cn(
+            "absolute inset-0 bg-black/50 transition-opacity duration-200",
+            isOpen ? "opacity-100" : "opacity-0"
+          )}
+        />
+        {/* Panel */}
+        <aside
+          className={cn(
+            "absolute left-0 top-0 h-full w-64 max-w-[80vw] bg-[#1a3a2a] text-white flex flex-col shadow-xl transition-transform duration-200 ease-out",
+            isOpen ? "translate-x-0" : "-translate-x-full"
+          )}
+        >
+          <div className="flex items-center justify-between px-5 py-5 border-b border-white/10">
+            <div>
+              <span className="font-serif text-lg font-semibold">Riverscape</span>
+              <span className="block text-xs text-white/50 mt-0.5">Admin Portal</span>
+            </div>
+            <button
+              type="button"
+              onClick={close}
+              aria-label="Close menu"
+              className="text-white/70 hover:text-white"
             >
-              <Icon size={16} />
-              <span className="flex-1">{item.label}</span>
-              {showBadge && (
-                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none">
-                  {pendingCount}
-                </span>
-              )}
-            </Link>
-          );
-        })}
-      </nav>
-
-      <div className="px-5 py-4 border-t border-white/10 text-xs text-white/40">
-        Riverscape PMS v1.0
+              <X size={20} />
+            </button>
+          </div>
+          <SidebarNav role={role} pendingCount={pendingCount} onNavigate={close} />
+          <div className="px-5 py-4 border-t border-white/10 text-xs text-white/40">
+            Riverscape PMS v1.0
+          </div>
+        </aside>
       </div>
-    </aside>
+    </>
   );
 }

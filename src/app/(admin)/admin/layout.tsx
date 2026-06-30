@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import AdminSidebar from "@/components/admin/sidebar";
 import AdminTopbar from "@/components/admin/topbar";
 import PendingColorSync from "@/components/admin/pending-color-sync";
+import { MobileNavProvider } from "@/components/admin/mobile-nav-context";
 
 const PENDING_APPROVAL_PATH = "/admin/pending-approval";
 
@@ -63,13 +64,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const colorLocked = dbUser?.colorLocked ?? false;
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
-      <PendingColorSync />
-      <AdminSidebar role={session.user.role} pendingCount={pendingCount} />
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <AdminTopbar user={session.user} salesColor={salesColor} colorLocked={colorLocked} />
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+    <MobileNavProvider>
+      <div className="flex h-screen bg-gray-50 overflow-hidden">
+        <PendingColorSync />
+        <AdminSidebar role={session.user.role} pendingCount={pendingCount} />
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <AdminTopbar user={session.user} salesColor={salesColor} colorLocked={colorLocked} />
+          <main className="flex-1 overflow-auto p-4 sm:p-6">{children}</main>
+        </div>
       </div>
-    </div>
+    </MobileNavProvider>
   );
 }

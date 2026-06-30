@@ -376,7 +376,7 @@ export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: 
 
       {/* ─── Booking Gantt ────────────────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div ref={scrollRef} className="overflow-auto max-h-[calc(100vh-220px)]">
+        <div ref={scrollRef} className="overflow-x-auto">
           <table className="w-full text-xs border-separate border-spacing-0">
             <thead>
               <tr>

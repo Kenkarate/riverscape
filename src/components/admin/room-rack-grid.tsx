@@ -31,6 +31,7 @@ export interface RackEntry {
   bookingId: string;
   bookingRef: string;
   guestName: string;
+  createdByName: string | null;
   status: BookingStatus;
   adults: number;
   children: number;
@@ -389,7 +390,7 @@ export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: 
                     <th
                       key={iso}
                       className={cn(
-                        "sticky top-0 z-20 px-1 py-2 text-center font-medium w-[64px] min-w-[64px] sm:w-[80px] sm:min-w-[80px] border-b border-r border-gray-100",
+                        "sticky top-0 z-20 px-1 py-2 text-center font-medium w-[80px] min-w-[80px] sm:w-[120px] sm:min-w-[120px] border-b border-r border-gray-100",
                         today ? "bg-amber-100 text-[#1a3a2a]" : "bg-gray-50 text-gray-500",
                         colVisibility(i)
                       )}
@@ -446,7 +447,7 @@ export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: 
                             key={iso}
                             onClick={isEmpty ? () => openCreatePanel(room, iso) : undefined}
                             className={cn(
-                              "h-12 w-[64px] min-w-[64px] sm:w-[80px] sm:min-w-[80px] align-middle px-0.5 border-b border-r border-gray-100",
+                              "h-14 w-[80px] min-w-[80px] sm:w-[120px] sm:min-w-[120px] align-middle px-0.5 border-b border-r border-gray-100",
                               today ? "bg-amber-50/60" : "",
                               isEmpty ? "cursor-pointer hover:bg-[#1a3a2a]/5 group/cell" : "",
                               colVisibility(i)
@@ -479,19 +480,23 @@ export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: 
                                           TONE_CHIP[tone]
                                         )}
                                       >
-                                        {/* Mobile: coloured dot only. Desktop: name + ref */}
-                                        <span className="sm:hidden flex items-center justify-center">
+                                        {/* Mobile: coloured dot + short name */}
+                                        <span className="sm:hidden flex items-center gap-1 overflow-hidden">
                                           <span
                                             className={cn(
-                                              "w-2.5 h-2.5 rounded-full inline-block",
+                                              "w-2 h-2 rounded-full shrink-0",
                                               TONE_DOT[tone]
                                             )}
                                           />
+                                          <span className="text-[10px] font-medium truncate leading-tight">
+                                            {e.guestName.split(" ")[0]}
+                                          </span>
                                         </span>
-                                        <span className="hidden sm:block font-medium truncate">
-                                          {e.guestName.slice(0, 12)}
+                                        {/* Desktop: full name + ref */}
+                                        <span className="hidden sm:block font-semibold text-[11px] truncate leading-tight">
+                                          {e.guestName}
                                         </span>
-                                        <span className="hidden sm:block text-[10px] opacity-70 truncate">
+                                        <span className="hidden sm:block text-[10px] opacity-60 truncate font-mono leading-tight">
                                           {e.bookingRef}
                                         </span>
                                       </button>
@@ -800,6 +805,12 @@ export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: 
                       </span>
                     </span>
                   </div>
+                  {panel.entry.createdByName && (
+                    <div className="flex items-center gap-1.5 text-xs text-gray-400 pt-0.5 border-t border-gray-100 mt-1">
+                      <span>Booked by</span>
+                      <span className="font-medium text-gray-600">{panel.entry.createdByName}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Editable stay */}

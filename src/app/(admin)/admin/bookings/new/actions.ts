@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { parseISO, differenceInCalendarDays } from "date-fns";
 import { requireStaff } from "@/lib/auth-helpers";
 import { calculatePrice } from "@/lib/pricing";
+import { createFolioForBooking } from "@/lib/folio";
 import { getAvailableRoomTypes, type AvailableRoomType } from "@/lib/availability";
 import { BOOKING_SOURCE_OPTIONS } from "@/lib/badges";
 import type { AdminBookingInput, GuestLookupResult, ActiveAddon } from "@/types";
@@ -409,6 +410,14 @@ export async function createAdminBooking(
           entityId: booking.id,
           after: { rooms: built.length, totalAmount },
         },
+      });
+
+      // 7. Open the guest folio (running tab) for this stay
+      await createFolioForBooking(tx, {
+        bookingId: booking.id,
+        propertyId: property.id,
+        guestId: guest.id,
+        createdById: user.id,
       });
     });
   } catch {

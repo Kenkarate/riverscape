@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, AlertCircle, FileText } from "lucide-react";
+import { ArrowLeft, AlertCircle, FileText, Wallet } from "lucide-react";
 import { formatINR } from "@/lib/pricing";
 import { bookingStatusBadge, sourceBadge, mealPlanLabel, paymentStatusBadge } from "@/lib/badges";
 import BookingActions from "@/components/admin/booking-actions";
@@ -330,7 +330,15 @@ export default async function BookingDetailPage({
 
       {/* Financial summary */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h2 className="font-medium text-gray-900 text-sm mb-4">Financial Summary</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-medium text-gray-900 text-sm">Financial Summary</h2>
+          <Link
+            href={`/admin/billing/folios/${booking.id}`}
+            className="inline-flex items-center gap-1.5 text-xs text-[#1a3a2a] hover:underline font-medium"
+          >
+            <Wallet size={13} /> View Folio
+          </Link>
+        </div>
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-gray-500">Room subtotal</span>

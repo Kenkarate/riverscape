@@ -16,6 +16,7 @@ import {
   Sparkles,
   ClipboardList,
   UserCog,
+  Wallet,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,7 @@ const navItems = [
   { href: "/admin/room-rack", label: "Allocation", icon: LayoutGrid, roles: ["SALES", "STAFF", "ADMIN", "SUPER_ADMIN"] },
   { href: "/admin/bookings", label: "Bookings", icon: BookOpen, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },
   { href: "/admin/guests", label: "Guests", icon: Users, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },
+  { href: "/admin/billing", label: "Billing", icon: Wallet, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },
   { href: "/admin/rooms", label: "Rooms", icon: Building2, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },
   { href: "/admin/housekeeping", label: "Housekeeping", icon: Sparkles, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },
   { href: "/admin/rates", label: "Rate Plans", icon: Percent, roles: ["ADMIN", "SUPER_ADMIN"] },

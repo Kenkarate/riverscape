@@ -133,6 +133,38 @@ enum RateOverrideType {
   SEASONAL
 }
 
+// ─── Billing / Folio enums ────────────────────────────────────────────────────
+
+enum FolioStatus {
+  OPEN     // running tab, charges/payments may still be posted
+  CLOSED   // checked out, no further charges expected
+  SETTLED  // closed and fully paid
+  VOID     // cancelled folio
+}
+
+enum FolioDepartment {
+  ROOM
+  ADDON
+  SPA
+  RESTAURANT
+  MINIBAR
+  LAUNDRY
+  ACTIVITY
+  TRANSPORT
+  OTHER
+}
+
+enum FolioChargeSource {
+  BOOKING    // reconciled from the Booking (room/add-on) — not posted ad-hoc
+  POS        // ad-hoc outlet charge posted by staff
+  ADJUSTMENT // manual correction / discount
+}
+
+enum FolioPaymentDirection {
+  PAYMENT
+  REFUND
+}
+
 // ─── Auth.js adapter tables ───────────────────────────────────────────────────
 
 model Account {
@@ -214,6 +246,7 @@ model Guest {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   bookings  Booking[]
+  folios    Folio[]
 
   @@index([phone])
   @@index([email])
@@ -234,6 +267,7 @@ model Property {
   checkOutTime String  @default("11:00")
   weekendDays  Int[]   @default([5, 6])
   invoiceSeq   Int     @default(0)
+  folioSeq     Int     @default(0)
   phone        String?
   email        String?
   website      String?
@@ -248,6 +282,7 @@ model Property {
   bookings  Booking[]
   channels  Channel[]
   salesAllocations SalesAllocation[]
+  folios    Folio[]
 }
 
 // ─── Room Types (logical) ─────────────────────────────────────────────────────
@@ -461,6 +496,7 @@ model Booking {
   payments Payment[]
   refunds  Refund[]
   invoice  Invoice?
+  folio    Folio?
 
   @@index([status, checkIn])
   @@index([source])
@@ -616,6 +652,94 @@ model Invoice {
   total         Int
   hsnSac        String   @default("996311")
   issuedAt      DateTime @default(now())
+}
+
+// ─── Folios (running guest tab) ───────────────────────────────────────────────
+// A Folio is the running bill for a stay. It is 1:1 with a Booking by default
+// (auto-created when the booking is created, lazily back-filled on first view).
+// Room/add-on charges remain authoritative on the Booking; the Folio layers in
+// ad-hoc POS/outlet charges (spa, restaurant, minibar, …) and the payments that
+// settle them. `parentFolioId` lets several folios roll up under one master bill
+// for group billing (Phase 2). All money is integer paise.
+
+model Folio {
+  id            String      @id @default(cuid())
+  folioNumber   String      @unique
+  propertyId    String
+  property      Property    @relation(fields: [propertyId], references: [id])
+  bookingId     String?     @unique
+  booking       Booking?    @relation(fields: [bookingId], references: [id])
+  guestId       String?
+  guest         Guest?      @relation(fields: [guestId], references: [id])
+  parentFolioId String?
+  parentFolio   Folio?      @relation("FolioGroup", fields: [parentFolioId], references: [id])
+  childFolios   Folio[]     @relation("FolioGroup")
+  status        FolioStatus @default(OPEN)
+  currency      String      @default("INR")
+
+  // Cached aggregates for POS/folio-specific lines (paise). Booking room/add-on
+  // charges and their payments are NOT included here — they live on the Booking.
+  chargesTotal  Int         @default(0) // Σ non-voided FolioCharge.total
+  paymentsTotal Int         @default(0) // Σ FolioPayment (PAYMENT − REFUND)
+  balance       Int         @default(0) // chargesTotal − paymentsTotal
+
+  notes       String?
+  closedAt    DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  charges  FolioCharge[]
+  payments FolioPayment[]
+
+  @@index([propertyId, status])
+  @@index([guestId])
+  @@index([parentFolioId])
+}
+
+// ─── Folio Charges (line items) ───────────────────────────────────────────────
+
+model FolioCharge {
+  id          String            @id @default(cuid())
+  folioId     String
+  folio       Folio             @relation(fields: [folioId], references: [id], onDelete: Cascade)
+  department  FolioDepartment   @default(OTHER)
+  source      FolioChargeSource @default(POS)
+  description String
+  quantity    Int               @default(1)
+  unitPrice   Int               // paise, pre-tax
+  subtotal    Int               // quantity × unitPrice
+  gstRate     Int               @default(0) // percent
+  taxAmount   Int               @default(0) // paise
+  total       Int               // subtotal + taxAmount
+  reference   String?
+  voided      Boolean           @default(false)
+  postedById  String?
+  createdAt   DateTime          @default(now())
+
+  @@index([folioId, voided])
+  @@index([department])
+  @@index([createdAt])
+}
+
+// ─── Folio Payments ───────────────────────────────────────────────────────────
+
+model FolioPayment {
+  id           String                @id @default(cuid())
+  folioId      String
+  folio        Folio                 @relation(fields: [folioId], references: [id], onDelete: Cascade)
+  direction    FolioPaymentDirection @default(PAYMENT)
+  amount       Int                   // paise (always positive; direction sets sign)
+  currency     String                @default("INR")
+  method       String
+  reference    String?
+  note         String?
+  recordedById String?
+  createdAt    DateTime              @default(now())
+
+  @@index([folioId])
+  @@index([method])
+  @@index([createdAt])
 }
 
 // ─── Channels ─────────────────────────────────────────────────────────────────

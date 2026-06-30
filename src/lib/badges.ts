@@ -7,6 +7,8 @@ import type {
   ChannelType,
   SyncStatus,
   AddonCategory,
+  FolioStatus,
+  FolioDepartment,
 } from "@prisma/client";
 
 export interface Badge {
@@ -138,3 +140,51 @@ export const ADDON_CATEGORY_OPTIONS: AddonCategory[] = [
   "ACTIVITY",
   "OTHER",
 ];
+
+// ─── Billing / Folio ──────────────────────────────────────────────────────────
+
+export const folioStatusBadge: Record<FolioStatus, Badge> = {
+  OPEN: { label: "Open", className: "bg-blue-100 text-blue-700" },
+  CLOSED: { label: "Closed", className: "bg-gray-100 text-gray-600" },
+  SETTLED: { label: "Settled", className: "bg-green-100 text-green-700" },
+  VOID: { label: "Void", className: "bg-red-100 text-red-700" },
+};
+
+export const folioDepartmentLabel: Record<FolioDepartment, string> = {
+  ROOM: "Room",
+  ADDON: "Add-on",
+  SPA: "Spa",
+  RESTAURANT: "Restaurant",
+  MINIBAR: "Minibar",
+  LAUNDRY: "Laundry",
+  ACTIVITY: "Activity",
+  TRANSPORT: "Transport",
+  OTHER: "Other",
+};
+
+export const folioDepartmentBadge: Record<FolioDepartment, Badge> = {
+  ROOM: { label: "Room", className: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200" },
+  ADDON: { label: "Add-on", className: "bg-teal-50 text-teal-700 ring-1 ring-teal-200" },
+  SPA: { label: "Spa", className: "bg-pink-50 text-pink-700 ring-1 ring-pink-200" },
+  RESTAURANT: { label: "Restaurant", className: "bg-orange-50 text-orange-700 ring-1 ring-orange-200" },
+  MINIBAR: { label: "Minibar", className: "bg-amber-50 text-amber-700 ring-1 ring-amber-200" },
+  LAUNDRY: { label: "Laundry", className: "bg-sky-50 text-sky-700 ring-1 ring-sky-200" },
+  ACTIVITY: { label: "Activity", className: "bg-violet-50 text-violet-700 ring-1 ring-violet-200" },
+  TRANSPORT: { label: "Transport", className: "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200" },
+  OTHER: { label: "Other", className: "bg-gray-100 text-gray-600 ring-1 ring-gray-200" },
+};
+
+// Departments a staff member can post an ad-hoc POS charge to. ROOM / ADDON are
+// reconciled from the Booking, so they are excluded from the manual picker.
+export const FOLIO_POS_DEPARTMENT_OPTIONS: FolioDepartment[] = [
+  "RESTAURANT",
+  "SPA",
+  "MINIBAR",
+  "LAUNDRY",
+  "ACTIVITY",
+  "TRANSPORT",
+  "OTHER",
+];
+
+// Payment methods accepted at the folio desk — mirrors the booking payment form.
+export const FOLIO_PAYMENT_METHODS = ["Cash", "Card", "UPI", "Bank Transfer"] as const;

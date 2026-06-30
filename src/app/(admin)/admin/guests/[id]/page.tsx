@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -13,8 +14,11 @@ import {
 import { formatINR } from "@/lib/pricing";
 import { bookingStatusBadge, sourceBadge } from "@/lib/badges";
 import GuestEditPanel from "@/components/admin/guest-edit-panel";
+import DeleteGuestButton from "@/components/admin/delete-guest-button";
 
 export const dynamic = "force-dynamic";
+
+const ADMIN_ROLES = ["ADMIN", "SUPER_ADMIN"];
 
 async function getGuest(id: string) {
   return prisma.guest.findUnique({
@@ -43,6 +47,10 @@ export default async function GuestDetailPage({
 
   const guest = await getGuest(id);
   if (!guest) notFound();
+
+  const session = await auth();
+  const role = (session?.user as { role?: string })?.role ?? null;
+  const isAdmin = !!role && ADMIN_ROLES.includes(role);
 
   const bookings = guest.bookings;
   const totalBookings = bookings.length;
@@ -117,18 +125,27 @@ export default async function GuestDetailPage({
           <h1 className="text-xl font-semibold text-gray-900">{guest.name}</h1>
           <p className="text-sm text-gray-400 mt-0.5">{guest.phone}</p>
         </div>
-        <GuestEditPanel
-          guestId={guest.id}
-          initial={{
-            name: guest.name,
-            phone: guest.phone,
-            email: guest.email,
-            address: guest.address,
-            idType: guest.idType,
-            idNumber: guest.idNumber,
-            country: guest.country,
-          }}
-        />
+        <div className="flex items-center gap-2">
+          <GuestEditPanel
+            guestId={guest.id}
+            initial={{
+              name: guest.name,
+              phone: guest.phone,
+              email: guest.email,
+              address: guest.address,
+              idType: guest.idType,
+              idNumber: guest.idNumber,
+              country: guest.country,
+            }}
+          />
+          {isAdmin && (
+            <DeleteGuestButton
+              guestId={guest.id}
+              guestName={guest.name}
+              redirectTo="/admin/guests"
+            />
+          )}
+        </div>
       </div>
 
       {/* Stats */}

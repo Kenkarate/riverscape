@@ -7,6 +7,7 @@ import { formatINR } from "@/lib/pricing";
 import { bookingStatusBadge, sourceBadge, mealPlanLabel, paymentStatusBadge } from "@/lib/badges";
 import BookingActions from "@/components/admin/booking-actions";
 import BookingEditPanel from "@/components/admin/booking-edit-panel";
+import DeleteBookingButton from "@/components/admin/delete-booking-button";
 import RecordPaymentForm from "@/components/admin/record-payment-form";
 import GenerateInvoiceButton from "@/components/admin/generate-invoice-button";
 import RoomAssignSelect from "@/components/admin/room-assign-select";
@@ -141,6 +142,13 @@ export default async function BookingDetailPage({
               }}
             />
             <BookingActions bookingId={booking.id} status={booking.status} isAdmin={isAdmin} />
+            {isAdmin && (
+              <DeleteBookingButton
+                bookingId={booking.id}
+                bookingRef={booking.bookingRef}
+                redirectTo="/admin/bookings"
+              />
+            )}
           </div>
         </div>
       </div>

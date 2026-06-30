@@ -738,3 +738,115 @@ export async function updateBooking(
   revalidatePath("/admin/room-rack");
   return { success: true };
 }
+
+// ─── Delete booking (hard delete) ─────────────────────────────────────────────
+
+export interface DeleteBookingResult {
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * Permanently deletes a booking together with its rooms, nightly breakdown,
+ * add-ons, payments and refunds. Admin-only. Refuses if a GST invoice has been
+ * generated (invoiced records must be preserved for accounting — cancel instead).
+ * Releases any held daily inventory for still-active bookings, mirroring
+ * cancellation, so availability is never left phantom-booked.
+ *
+ * BookingRoom (+ nights) and BookingAddon are removed by the DB cascade; Payment
+ * and Refund have no cascade, so they are deleted explicitly first.
+ */
+export async function deleteBooking(bookingId: string): Promise<DeleteBookingResult> {
+  const user = await requireAdmin();
+
+  const booking = await prisma.booking.findUnique({
+    where: { id: bookingId },
+    select: {
+      id: true,
+      bookingRef: true,
+      status: true,
+      checkIn: true,
+      checkOut: true,
+      totalAmount: true,
+      invoice: { select: { number: true } },
+      rooms: { select: { roomTypeId: true, checkIn: true, checkOut: true } },
+    },
+  });
+  if (!booking) return { success: false, error: "Booking not found." };
+
+  if (booking.invoice) {
+    return {
+      success: false,
+      error: `This booking has GST invoice ${booking.invoice.number} and cannot be deleted. Cancel it instead.`,
+    };
+  }
+
+  // Inventory is only reserved for live bookings.
+  const releaseInventory = ["PENDING", "CONFIRMED", "CHECKED_IN"].includes(booking.status);
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Dependent financial records that don't cascade (Refund references Payment).
+      await tx.refund.deleteMany({ where: { bookingId } });
+      await tx.payment.deleteMany({ where: { bookingId } });
+
+      if (releaseInventory) {
+        // Count units this booking held per (room type, night).
+        const counts = new Map<string, number>();
+        for (const br of booking.rooms) {
+          const cur = new Date(br.checkIn);
+          const end = new Date(br.checkOut);
+          while (cur < end) {
+            const key = `${br.roomTypeId}|${cur.toISOString().slice(0, 10)}`;
+            counts.set(key, (counts.get(key) ?? 0) + 1);
+            cur.setDate(cur.getDate() + 1);
+          }
+        }
+        const typeIds = Array.from(new Set(booking.rooms.map((r) => r.roomTypeId)));
+        if (typeIds.length) {
+          const rows = await tx.dailyInventory.findMany({
+            where: {
+              roomTypeId: { in: typeIds },
+              date: { gte: booking.checkIn, lt: booking.checkOut },
+            },
+          });
+          for (const row of rows) {
+            const dec = counts.get(`${row.roomTypeId}|${row.date.toISOString().slice(0, 10)}`);
+            if (dec) {
+              const next = Math.max(0, row.bookedUnits - dec);
+              if (next !== row.bookedUnits) {
+                await tx.dailyInventory.update({
+                  where: { id: row.id },
+                  data: { bookedUnits: next },
+                });
+              }
+            }
+          }
+        }
+      }
+
+      // Cascades BookingRoom → BookingRoomNight, and BookingAddon.
+      await tx.booking.delete({ where: { id: bookingId } });
+
+      await tx.auditLog.create({
+        data: {
+          userId: user.id,
+          action: "BOOKING_DELETED",
+          entityType: "Booking",
+          entityId: bookingId,
+          before: {
+            bookingRef: booking.bookingRef,
+            status: booking.status,
+            totalAmount: booking.totalAmount,
+          },
+        },
+      });
+    });
+  } catch {
+    return { success: false, error: "Could not delete the booking. Please try again." };
+  }
+
+  revalidatePath("/admin/bookings");
+  revalidatePath("/admin/room-rack");
+  return { success: true };
+}

@@ -1,10 +1,14 @@
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
 import Link from "next/link";
 import { AlertCircle, Plus } from "lucide-react";
 import { formatINR } from "@/lib/pricing";
 import { bookingStatusBadge, sourceBadge, BOOKING_STATUS_OPTIONS } from "@/lib/badges";
 import BookingRowActions from "@/components/admin/booking-row-actions";
+import DeleteBookingButton from "@/components/admin/delete-booking-button";
 import type { BookingStatus, BookingSource, Prisma } from "@prisma/client";
+
+const ADMIN_ROLES = ["ADMIN", "SUPER_ADMIN"];
 
 export const dynamic = "force-dynamic";
 
@@ -133,6 +137,10 @@ export default async function BookingsPage({
   const page = Math.max(1, parseInt(sp.page ?? "1", 10));
   const status = sp.status as BookingStatus | undefined;
   const source = sp.source as BookingSource | undefined;
+
+  const session = await auth();
+  const role = (session?.user as { role?: string })?.role ?? null;
+  const isAdmin = !!role && ADMIN_ROLES.includes(role);
 
   let data = null;
   let dbError = false;
@@ -360,7 +368,12 @@ export default async function BookingsPage({
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <BookingRowActions bookingId={b.id} status={b.status} />
+                        <div className="inline-flex items-center justify-end gap-1">
+                          <BookingRowActions bookingId={b.id} status={b.status} />
+                          {isAdmin && (
+                            <DeleteBookingButton bookingId={b.id} bookingRef={b.bookingRef} compact />
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

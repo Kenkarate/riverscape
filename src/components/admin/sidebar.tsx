@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  CalendarDays,
   LayoutGrid,
   BookOpen,
   Building2,
@@ -21,8 +20,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, roles: ["SALES", "STAFF", "ADMIN", "SUPER_ADMIN"] },
-  { href: "/admin/allocation", label: "Allocation", icon: CalendarDays, roles: ["SALES", "STAFF", "ADMIN", "SUPER_ADMIN"] },
-  { href: "/admin/room-rack", label: "Room Rack", icon: LayoutGrid, roles: ["SALES", "STAFF", "ADMIN", "SUPER_ADMIN"] },
+  { href: "/admin/room-rack", label: "Allocation & Rack", icon: LayoutGrid, roles: ["SALES", "STAFF", "ADMIN", "SUPER_ADMIN"] },
   { href: "/admin/bookings", label: "Bookings", icon: BookOpen, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },
   { href: "/admin/guests", label: "Guests", icon: Users, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },
   { href: "/admin/rooms", label: "Rooms", icon: Building2, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },

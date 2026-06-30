@@ -40,6 +40,7 @@ export async function createSalesAllocation(data: {
     },
   });
 
+  revalidatePath("/admin/room-rack");
   revalidatePath("/admin/allocation");
 }
 
@@ -57,6 +58,7 @@ export async function releaseSalesAllocation(id: string): Promise<void> {
   }
 
   await prisma.salesAllocation.update({ where: { id }, data: { status: "RELEASED" } });
+  revalidatePath("/admin/room-rack");
   revalidatePath("/admin/allocation");
 }
 
@@ -82,5 +84,6 @@ export async function updateUserColor(color: string): Promise<void> {
     where: { id: userId },
     data: { salesColor: color, colorLocked: true },
   });
+  revalidatePath("/admin/room-rack");
   revalidatePath("/admin/allocation");
 }

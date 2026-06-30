@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Loader2, Plus, X } from "lucide-react";
+import { Check, Loader2, Lock, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SALES_COLOR_PALETTE, SALES_COLOR_DEFAULT } from "@/lib/sales-colors";
 import {
@@ -48,6 +48,8 @@ interface Props {
     salesColor: string | null;
     role: string | null;
   } | null;
+  /** When true the user has already locked in their color — picker is hidden. */
+  colorLocked: boolean;
   todayStr: string;
 }
 
@@ -93,6 +95,7 @@ export default function AllocationGrid({
   allocMap,
   allocations,
   currentUser,
+  colorLocked,
   todayStr,
 }: Props) {
   const router = useRouter();
@@ -414,29 +417,36 @@ export default function AllocationGrid({
               />
               {currentUser.name ?? "You"}
             </span>
-            <div className="flex items-center gap-1.5">
-              {SALES_COLOR_PALETTE.map((hex) => {
-                const active = currentUser.salesColor?.toLowerCase() === hex.toLowerCase();
-                return (
-                  <button
-                    key={hex}
-                    type="button"
-                    onClick={() => handlePickColor(hex)}
-                    disabled={isColorPending}
-                    aria-label={`Set color ${hex}`}
-                    title={hex}
-                    className={cn(
-                      "w-6 h-6 rounded-full inline-flex items-center justify-center transition-transform hover:scale-110 disabled:opacity-50",
-                      active ? "ring-2 ring-offset-2 ring-gray-800" : "ring-1 ring-black/10"
-                    )}
-                    style={{ backgroundColor: hex }}
-                  >
-                    {active && <Check size={13} className="text-white" />}
-                  </button>
-                );
-              })}
-              {isColorPending && <Loader2 size={14} className="animate-spin text-gray-400" />}
-            </div>
+            {colorLocked ? (
+              <span className="flex items-center gap-1.5 text-xs text-gray-400">
+                <Lock size={12} />
+                Color locked — contact admin to change
+              </span>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                {SALES_COLOR_PALETTE.map((hex) => {
+                  const active = currentUser.salesColor?.toLowerCase() === hex.toLowerCase();
+                  return (
+                    <button
+                      key={hex}
+                      type="button"
+                      onClick={() => handlePickColor(hex)}
+                      disabled={isColorPending}
+                      aria-label={`Set color ${hex}`}
+                      title={hex}
+                      className={cn(
+                        "w-6 h-6 rounded-full inline-flex items-center justify-center transition-transform hover:scale-110 disabled:opacity-50",
+                        active ? "ring-2 ring-offset-2 ring-gray-800" : "ring-1 ring-black/10"
+                      )}
+                      style={{ backgroundColor: hex }}
+                    >
+                      {active && <Check size={13} className="text-white" />}
+                    </button>
+                  );
+                })}
+                {isColorPending && <Loader2 size={14} className="animate-spin text-gray-400" />}
+              </div>
+            )}
           </div>
         </div>
       )}

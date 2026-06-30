@@ -107,10 +107,13 @@ async function getAllocationData(startDate: Date) {
   const dbUser = userId
     ? await prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, name: true, salesColor: true },
+        select: { id: true, name: true, salesColor: true, colorLocked: true },
       })
     : null;
-  const currentUser = dbUser ? { ...dbUser, role } : null;
+  const currentUser = dbUser
+    ? { id: dbUser.id, name: dbUser.name, salesColor: dbUser.salesColor, role }
+    : null;
+  const colorLocked = dbUser?.colorLocked ?? false;
 
   // ─── Active sales allocations for the window ────────────────────────────────
   const salesAllocations = await prisma.salesAllocation.findMany({
@@ -177,7 +180,7 @@ async function getAllocationData(startDate: Date) {
     rooms: rt.rooms.map((r) => ({ id: r.id })),
   }));
 
-  return { roomTypes, cellMap, allocMap, allocations, currentUser };
+  return { roomTypes, cellMap, allocMap, allocations, currentUser, colorLocked };
 }
 
 interface SearchParams {
@@ -275,6 +278,7 @@ export default async function AllocationPage({
         allocMap={data.allocMap}
         allocations={data.allocations}
         currentUser={data.currentUser}
+        colorLocked={data.colorLocked}
         todayStr={todayStr}
       />
     </div>

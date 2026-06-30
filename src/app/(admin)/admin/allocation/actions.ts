@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
-import { requireStaff } from "@/lib/auth-helpers";
+import { requireAllocationStaff } from "@/lib/auth-helpers";
 import { revalidatePath } from "next/cache";
 
 export async function createSalesAllocation(data: {
@@ -12,7 +12,7 @@ export async function createSalesAllocation(data: {
   units: number;
   label?: string;
 }): Promise<void> {
-  await requireStaff();
+  await requireAllocationStaff();
   const session = await auth();
   const userId = session?.user?.id;
 
@@ -44,7 +44,7 @@ export async function createSalesAllocation(data: {
 }
 
 export async function releaseSalesAllocation(id: string): Promise<void> {
-  await requireStaff();
+  await requireAllocationStaff();
   const session = await auth();
   const userId = session?.user?.id;
 
@@ -61,7 +61,7 @@ export async function releaseSalesAllocation(id: string): Promise<void> {
 }
 
 export async function updateUserColor(color: string): Promise<void> {
-  await requireStaff();
+  await requireAllocationStaff();
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) throw new Error("Not authenticated");
@@ -69,6 +69,18 @@ export async function updateUserColor(color: string): Promise<void> {
   // Validate hex color format
   if (!/^#[0-9a-fA-F]{6}$/.test(color)) throw new Error("Invalid color");
 
-  await prisma.user.update({ where: { id: userId }, data: { salesColor: color } });
+  // One-time pick: once a color is locked, only an admin reset can change it.
+  // (PendingColorSync and the topbar picker also call this, so the guard must
+  // live here on the server — hiding the UI alone is not enough.)
+  const current = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { colorLocked: true },
+  });
+  if (current?.colorLocked) return;
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { salesColor: color, colorLocked: true },
+  });
   revalidatePath("/admin/allocation");
 }

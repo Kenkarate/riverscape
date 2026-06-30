@@ -14,7 +14,7 @@ export async function createStaffUser(data: {
   email: string;
   phone?: string;
   password: string;
-  role: "STAFF" | "ADMIN"; // SUPER_ADMIN can't be created via UI
+  role: "SALES" | "STAFF" | "ADMIN"; // SUPER_ADMIN can't be created via UI
 }): Promise<void> {
   const actor = await requireAdmin();
 
@@ -22,7 +22,11 @@ export async function createStaffUser(data: {
   const email = data.email.trim().toLowerCase();
   const phone = data.phone?.trim() || null;
   const password = data.password;
-  const role: Role = data.role === "ADMIN" ? "ADMIN" : "STAFF";
+  const role: Role =
+    data.role === "ADMIN" ? "ADMIN" : data.role === "SALES" ? "SALES" : "STAFF";
+  // SALES accounts must be approved by an admin before they can access the
+  // dashboard. Everyone else is active immediately.
+  const status = role === "SALES" ? "PENDING_APPROVAL" : "ACTIVE";
 
   if (!name) throw new Error("Name is required");
   if (!EMAIL_RE.test(email)) throw new Error("Enter a valid email address");
@@ -39,7 +43,7 @@ export async function createStaffUser(data: {
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
   const user = await prisma.user.create({
-    data: { name, email, phone, passwordHash, role },
+    data: { name, email, phone, passwordHash, role, status },
     select: { id: true },
   });
 
@@ -49,7 +53,7 @@ export async function createStaffUser(data: {
       action: "STAFF_CREATED",
       entityType: "User",
       entityId: user.id,
-      after: { name, email, role },
+      after: { name, email, role, status },
     },
   });
 
@@ -58,7 +62,7 @@ export async function createStaffUser(data: {
 
 export async function updateStaffRole(
   userId: string,
-  role: "STAFF" | "ADMIN" | "SUPER_ADMIN"
+  role: "SALES" | "STAFF" | "ADMIN" | "SUPER_ADMIN"
 ): Promise<void> {
   const actor = await requireAdmin();
 
@@ -66,7 +70,7 @@ export async function updateStaffRole(
     throw new Error("You cannot change your own role");
   }
 
-  const allowed: Role[] = ["STAFF", "ADMIN", "SUPER_ADMIN"];
+  const allowed: Role[] = ["SALES", "STAFF", "ADMIN", "SUPER_ADMIN"];
   if (!allowed.includes(role)) {
     throw new Error("Invalid role");
   }
@@ -125,5 +129,97 @@ export async function deactivateStaffUser(userId: string): Promise<void> {
     },
   });
 
+  revalidatePath("/admin/staff");
+}
+
+// ─── SALES approval flow ──────────────────────────────────────────────────────
+
+/** Approve a pending SALES account — grants dashboard access. */
+export async function approveUser(userId: string): Promise<void> {
+  const actor = await requireAdmin();
+
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, status: true, role: true },
+  });
+  if (!target) throw new Error("User not found");
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { status: "ACTIVE" },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: actor.id,
+      action: "USER_APPROVED",
+      entityType: "User",
+      entityId: userId,
+      before: { status: target.status },
+      after: { status: "ACTIVE" },
+    },
+  });
+
+  revalidatePath("/admin/staff");
+  revalidatePath("/admin");
+}
+
+/** Reject a SALES account — suspends it and blocks login. */
+export async function rejectUser(userId: string): Promise<void> {
+  const actor = await requireAdmin();
+
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, status: true, role: true },
+  });
+  if (!target) throw new Error("User not found");
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { status: "SUSPENDED" },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: actor.id,
+      action: "USER_REJECTED",
+      entityType: "User",
+      entityId: userId,
+      before: { status: target.status },
+      after: { status: "SUSPENDED" },
+    },
+  });
+
+  revalidatePath("/admin/staff");
+  revalidatePath("/admin");
+}
+
+/** Clear a user's locked allocation color so they can pick again (admin only). */
+export async function resetUserColor(userId: string): Promise<void> {
+  const actor = await requireAdmin();
+
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, salesColor: true },
+  });
+  if (!target) throw new Error("User not found");
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { salesColor: null, colorLocked: false },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: actor.id,
+      action: "USER_COLOR_RESET",
+      entityType: "User",
+      entityId: userId,
+      before: { salesColor: target.salesColor },
+      after: { salesColor: null },
+    },
+  });
+
+  revalidatePath("/admin/allocation");
   revalidatePath("/admin/staff");
 }

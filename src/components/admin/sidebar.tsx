@@ -20,9 +20,9 @@ import {
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/admin", label: "Dashboard", icon: LayoutDashboard, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },
-  { href: "/admin/allocation", label: "Allocation", icon: CalendarDays, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },
-  { href: "/admin/room-rack", label: "Room Rack", icon: LayoutGrid, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },
+  { href: "/admin", label: "Dashboard", icon: LayoutDashboard, roles: ["SALES", "STAFF", "ADMIN", "SUPER_ADMIN"] },
+  { href: "/admin/allocation", label: "Allocation", icon: CalendarDays, roles: ["SALES", "STAFF", "ADMIN", "SUPER_ADMIN"] },
+  { href: "/admin/room-rack", label: "Room Rack", icon: LayoutGrid, roles: ["SALES", "STAFF", "ADMIN", "SUPER_ADMIN"] },
   { href: "/admin/bookings", label: "Bookings", icon: BookOpen, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },
   { href: "/admin/guests", label: "Guests", icon: Users, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },
   { href: "/admin/rooms", label: "Rooms", icon: Building2, roles: ["STAFF", "ADMIN", "SUPER_ADMIN"] },
@@ -37,9 +37,11 @@ const navItems = [
 
 interface AdminSidebarProps {
   role?: string | null;
+  /** Number of SALES accounts awaiting approval — shown as a red badge on Staff. */
+  pendingCount?: number;
 }
 
-export default function AdminSidebar({ role }: AdminSidebarProps) {
+export default function AdminSidebar({ role, pendingCount = 0 }: AdminSidebarProps) {
   const pathname = usePathname();
 
   const visible = navItems.filter((item) =>
@@ -60,6 +62,7 @@ export default function AdminSidebar({ role }: AdminSidebarProps) {
             item.href === "/admin"
               ? pathname === "/admin"
               : pathname.startsWith(item.href);
+          const showBadge = item.href === "/admin/staff" && pendingCount > 0;
           return (
             <Link
               key={item.href}
@@ -72,7 +75,12 @@ export default function AdminSidebar({ role }: AdminSidebarProps) {
               )}
             >
               <Icon size={16} />
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {showBadge && (
+                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none">
+                  {pendingCount}
+                </span>
+              )}
             </Link>
           );
         })}

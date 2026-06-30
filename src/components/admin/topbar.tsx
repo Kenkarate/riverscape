@@ -11,15 +11,17 @@ interface TopbarProps {
     role?: string | null;
   };
   salesColor?: string | null;
+  colorLocked?: boolean;
 }
 
 const roleLabels: Record<string, string> = {
   SUPER_ADMIN: "Super Admin",
   ADMIN: "Admin",
   STAFF: "Staff",
+  SALES: "Sales",
 };
 
-export default function AdminTopbar({ user, salesColor }: TopbarProps) {
+export default function AdminTopbar({ user, salesColor, colorLocked = false }: TopbarProps) {
   return (
     <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0">
       <div />
@@ -31,7 +33,7 @@ export default function AdminTopbar({ user, salesColor }: TopbarProps) {
             {roleLabels[user.role ?? "STAFF"] ?? user.role}
           </span>
         </div>
-        <UserColorPicker initialColor={salesColor ?? null} />
+        <UserColorPicker initialColor={salesColor ?? null} locked={colorLocked} />
         <button
           onClick={() => signOut({ callbackUrl: "/admin/login" })}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-red-600 transition-colors"

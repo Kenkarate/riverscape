@@ -17,7 +17,7 @@ export default function CreateStaffForm() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"STAFF" | "ADMIN">("STAFF");
+  const [role, setRole] = useState<"SALES" | "STAFF" | "ADMIN">("STAFF");
 
   function reset() {
     setName("");
@@ -148,12 +148,18 @@ export default function CreateStaffForm() {
           <select
             id="staff-role"
             value={role}
-            onChange={(e) => setRole(e.target.value as "STAFF" | "ADMIN")}
+            onChange={(e) => setRole(e.target.value as "SALES" | "STAFF" | "ADMIN")}
             className={inputClass}
           >
+            <option value="SALES">Sales</option>
             <option value="STAFF">Staff</option>
             <option value="ADMIN">Admin</option>
           </select>
+          {role === "SALES" && (
+            <p className="text-xs text-gray-400 mt-1">
+              Sales accounts require admin approval before they can sign in.
+            </p>
+          )}
         </div>
       </div>
 

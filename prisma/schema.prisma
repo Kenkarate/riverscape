@@ -11,6 +11,7 @@ datasource db {
 
 enum Role {
   GUEST
+  SALES
   STAFF
   ADMIN
   SUPER_ADMIN
@@ -177,6 +178,8 @@ model User {
   name          String?
   phone         String?
   role          Role      @default(GUEST)
+  status        String    @default("ACTIVE") // ACTIVE | PENDING_APPROVAL | SUSPENDED
+  colorLocked   Boolean   @default(false)    // one-time sales color pick; admin resets
   emailVerified DateTime?
   image         String?
   salesColor    String?   // hex color e.g. "#0d9488"

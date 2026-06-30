@@ -27,7 +27,13 @@ export default auth((req) => {
     return NextResponse.redirect(new URL("/admin", req.url));
   }
 
-  return NextResponse.next();
+  // Forward the pathname to server components so the admin layout can exempt the
+  // /admin/pending-approval holding page from the SALES approval redirect.
+  // NOTE: the SALES status gate itself runs in the admin layout (Node runtime),
+  // which reads the *fresh* status from the DB — status is not in the JWT here.
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-pathname", pathname);
+  return NextResponse.next({ request: { headers: requestHeaders } });
 });
 
 export const config = {

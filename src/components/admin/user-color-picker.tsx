@@ -2,16 +2,18 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Loader2 } from "lucide-react";
+import { Check, Loader2, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SALES_COLOR_PALETTE, SALES_COLOR_DEFAULT } from "@/lib/sales-colors";
 import { updateUserColor } from "@/app/(admin)/admin/allocation/actions";
 
 interface Props {
   initialColor: string | null;
+  /** Once a color is locked it can only be changed by an admin reset. */
+  locked?: boolean;
 }
 
-export default function UserColorPicker({ initialColor }: Props) {
+export default function UserColorPicker({ initialColor, locked = false }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [color, setColor] = useState<string | null>(initialColor);
@@ -39,6 +41,24 @@ export default function UserColorPicker({ initialColor }: Props) {
       }
     });
     setOpen(false);
+  }
+
+  // Locked: render a read-only swatch with a small lock indicator. No dropdown.
+  if (locked) {
+    return (
+      <span
+        title="Color locked — contact an admin to change"
+        className="relative inline-flex items-center justify-center w-7 h-7 rounded-full"
+      >
+        <span
+          className="w-4 h-4 rounded-full inline-block ring-1 ring-black/10"
+          style={{ backgroundColor: color ?? SALES_COLOR_DEFAULT }}
+        />
+        <span className="absolute -bottom-0.5 -right-0.5 bg-white rounded-full p-px ring-1 ring-black/5">
+          <Lock size={9} className="text-gray-500" />
+        </span>
+      </span>
+    );
   }
 
   return (

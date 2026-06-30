@@ -33,6 +33,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         if (!user || !user.passwordHash) return null;
         if (user.role === "GUEST") return null; // guests use separate auth
+        if (user.status === "SUSPENDED") return null; // rejected/disabled accounts
 
         const valid = await bcrypt.compare(password, user.passwordHash);
         if (!valid) return null;

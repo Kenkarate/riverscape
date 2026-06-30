@@ -38,16 +38,23 @@ export interface GalleryImage {
 // "use server" modules may only export async functions.
 export type ActionState = { ok: boolean; message?: string } | null;
 
+// A single room line in an admin booking. A booking may contain one or more of
+// these — the same guest can book multiple rooms (of any type) in one booking,
+// each with its own occupancy.
+export interface AdminBookingRoomLine {
+  roomTypeId: string;
+  adults: number;
+  children: number;
+}
+
 // Payload for the admin "New Booking" server action. Enum-like fields are kept
 // as plain strings here (validated/cast inside the action) so this module stays
 // free of `@prisma/client` imports and can be shared with the client form.
 export interface AdminBookingInput {
   checkIn: string; // YYYY-MM-DD
   checkOut: string; // YYYY-MM-DD
-  adults: number;
-  children: number;
+  rooms: AdminBookingRoomLine[]; // one or more rooms for the same stay & guest
   source: string; // BookingSource
-  roomTypeId: string;
   mealPlan: string; // MealPlan
   addonIds: string[];
   guest: {

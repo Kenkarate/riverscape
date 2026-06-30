@@ -199,7 +199,7 @@ export default async function RoomRackPage({
   if (!data || data.rooms.length === 0) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold text-gray-900">Room Rack</h1>
+        <h1 className="text-xl font-semibold text-gray-900">Allocation</h1>
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
           <p className="text-sm font-medium text-gray-700">No rooms found</p>
           <p className="text-sm text-gray-400 mt-1">
@@ -218,7 +218,7 @@ export default async function RoomRackPage({
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Room Rack</h1>
+          <h1 className="text-xl font-semibold text-gray-900">Allocation</h1>
           <p className="text-xs text-gray-400 mt-0.5">
             Monthly view — click a chip to manage, or an empty cell to create a booking.
           </p>

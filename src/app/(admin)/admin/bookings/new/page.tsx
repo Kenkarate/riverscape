@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, Loader2, Search, UserCheck } from "lucide-react";
+import { ArrowLeft, Check, Loader2, Plus, Search, Trash2, UserCheck } from "lucide-react";
 import { calculatePrice, formatINR } from "@/lib/pricing";
 import { BOOKING_SOURCE_OPTIONS, sourceBadge, mealPlanLabel } from "@/lib/badges";
 import {
@@ -29,7 +29,21 @@ function tomorrowStr() {
   return new Date(Date.now() + 86400000).toISOString().slice(0, 10);
 }
 
-const STEPS = ["Stay", "Room & Plan", "Guest", "Payment"];
+let lineSeq = 0;
+function newLineId() {
+  lineSeq += 1;
+  return `line-${lineSeq}`;
+}
+
+// A single room in the booking — its own type and occupancy.
+interface RoomLine {
+  id: string;
+  roomTypeId: string;
+  adults: number;
+  children: number;
+}
+
+const STEPS = ["Stay", "Rooms", "Guest", "Payment"];
 
 export default function NewBookingPage() {
   const [step, setStep] = useState(1);
@@ -39,16 +53,14 @@ export default function NewBookingPage() {
   // Step 1 — stay
   const [checkIn, setCheckIn] = useState(todayStr());
   const [checkOut, setCheckOut] = useState(tomorrowStr());
-  const [adults, setAdults] = useState(2);
-  const [children, setChildren] = useState(0);
   const [source, setSource] = useState<string>("WALK_IN");
 
   // Availability
   const [rooms, setRooms] = useState<AvailableRoomType[] | null>(null);
   const [checking, setChecking] = useState(false);
 
-  // Step 2 — room + meal plan
-  const [roomTypeId, setRoomTypeId] = useState<string>("");
+  // Step 2 — rooms (one or more) + meal plan
+  const [lines, setLines] = useState<RoomLine[]>([]);
   const [mealPlan, setMealPlan] = useState<MealPlan>("ROOM_ONLY");
 
   // Step 3 — guest
@@ -70,7 +82,6 @@ export default function NewBookingPage() {
   const [paymentMethod, setPaymentMethod] = useState<string>("Cash");
   const [amount, setAmount] = useState<string>("");
 
-  const selectedRoom = rooms?.find((r) => r.id === roomTypeId) ?? null;
   const chosenAddons = addons.filter((a) => selectedAddons.includes(a.id));
 
   // Load add-ons once on mount
@@ -80,22 +91,57 @@ export default function NewBookingPage() {
       .catch(() => setAddons([]));
   }, []);
 
-  // Live price preview (recomputed authoritatively on the server at submit time)
-  const price = selectedRoom
-    ? calculatePrice({
-        checkIn: new Date(checkIn),
-        checkOut: new Date(checkOut),
-        ratePerNight: selectedRoom.ratePlan.basePrice,
-        extraAdults: Math.max(0, adults - selectedRoom.baseOccupancy),
-        extraAdultPrice: selectedRoom.ratePlan.extraAdultPrice,
-        extraChildrenWithBed: 0,
-        extraChildWithBedPrice: selectedRoom.ratePlan.extraChildWithBed,
-        extraChildrenNoBed: children,
-        extraChildNoBedPrice: selectedRoom.ratePlan.extraChildNoBed,
-        addons: chosenAddons.map((a) => ({ price: a.price, quantity: 1, gstRate: a.gstRate })),
-        couponDiscount: 0,
-      })
-    : null;
+  function roomTypeFor(id: string) {
+    return rooms?.find((r) => r.id === id) ?? null;
+  }
+
+  // Live price per line (recomputed authoritatively on the server at submit).
+  function priceForLine(line: RoomLine) {
+    const rt = roomTypeFor(line.roomTypeId);
+    if (!rt) return null;
+    return calculatePrice({
+      checkIn: new Date(checkIn),
+      checkOut: new Date(checkOut),
+      ratePerNight: rt.ratePlan.basePrice,
+      extraAdults: Math.max(0, line.adults - rt.baseOccupancy),
+      extraAdultPrice: rt.ratePlan.extraAdultPrice,
+      extraChildrenWithBed: 0,
+      extraChildWithBedPrice: rt.ratePlan.extraChildWithBed,
+      extraChildrenNoBed: line.children,
+      extraChildNoBedPrice: rt.ratePlan.extraChildNoBed,
+      addons: [],
+      couponDiscount: 0,
+    });
+  }
+
+  // Combined summary across all room lines + booking-level add-ons.
+  const validLines = lines.filter((l) => l.roomTypeId);
+  const linePrices = validLines.map((l) => ({ line: l, price: priceForLine(l) }));
+  const roomSubtotal = linePrices.reduce((s, lp) => s + (lp.price?.roomSubtotal ?? 0), 0);
+  const extraCharges = linePrices.reduce((s, lp) => s + (lp.price?.addonSubtotal ?? 0), 0);
+  const roomTax = linePrices.reduce((s, lp) => s + (lp.price?.roomTax ?? 0), 0);
+  const addonBase = chosenAddons.reduce((s, a) => s + a.price, 0);
+  const addonTax = chosenAddons.reduce(
+    (s, a) => s + Math.round((a.price * a.gstRate) / 100),
+    0
+  );
+  const gstTotal = roomTax + addonTax;
+  const grandTotal = roomSubtotal + extraCharges + addonBase + gstTotal;
+  const nightsCount = linePrices[0]?.price?.nights.length ?? 0;
+  const hasPricing = validLines.length > 0 && grandTotal > 0;
+
+  // Count rooms requested per type, to flag exceeding availability.
+  function lineCountForType(typeId: string) {
+    return lines.filter((l) => l.roomTypeId === typeId).length;
+  }
+  const overbookedType = rooms
+    ? rooms.find((rt) => lineCountForType(rt.id) > rt.availableCount)
+    : undefined;
+
+  function resetRooms() {
+    setRooms(null);
+    setLines([]);
+  }
 
   function handleCheckAvailability() {
     setError(null);
@@ -106,12 +152,16 @@ export default function NewBookingPage() {
     setChecking(true);
     startTransition(async () => {
       try {
-        const result = await getAvailability(checkIn, checkOut, adults);
+        const result = await getAvailability(checkIn, checkOut, 1);
         setRooms(result);
-        setRoomTypeId("");
         if (result.length === 0) {
-          setError("No room types available for these dates and occupancy.");
+          setLines([]);
+          setError("No room types available for these dates.");
         } else {
+          // Seed with a single room line on the cheapest available type.
+          setLines([
+            { id: newLineId(), roomTypeId: result[0].id, adults: 2, children: 0 },
+          ]);
           setStep(2);
         }
       } catch {
@@ -120,6 +170,34 @@ export default function NewBookingPage() {
         setChecking(false);
       }
     });
+  }
+
+  function addLine() {
+    if (!rooms || rooms.length === 0) return;
+    setLines((prev) => [
+      ...prev,
+      { id: newLineId(), roomTypeId: rooms[0].id, adults: 2, children: 0 },
+    ]);
+  }
+
+  function removeLine(id: string) {
+    setLines((prev) => prev.filter((l) => l.id !== id));
+  }
+
+  function updateLine(id: string, patch: Partial<RoomLine>) {
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.id !== id) return l;
+        const next = { ...l, ...patch };
+        // Clamp occupancy to the chosen room type's limits.
+        const rt = roomTypeFor(next.roomTypeId);
+        if (rt) {
+          next.adults = Math.max(1, Math.min(rt.maxAdults, next.adults));
+          next.children = Math.max(0, Math.min(rt.maxChildren, next.children));
+        }
+        return next;
+      })
+    );
   }
 
   function handleLookup() {
@@ -149,11 +227,17 @@ export default function NewBookingPage() {
   }
 
   function goToGuestStep() {
-    if (!roomTypeId) {
-      setError("Select a room type to continue.");
+    setError(null);
+    if (validLines.length === 0) {
+      setError("Add at least one room to continue.");
       return;
     }
-    setError(null);
+    if (overbookedType) {
+      setError(
+        `Only ${overbookedType.availableCount} ${overbookedType.name} room(s) are available for these dates.`
+      );
+      return;
+    }
     setStep(3);
   }
 
@@ -168,16 +252,16 @@ export default function NewBookingPage() {
       return;
     }
     // Pre-fill the payment amount with the full total the first time we land here.
-    if (price && amount === "") {
-      setAmount(String(price.totalAmount / 100));
+    if (hasPricing && amount === "") {
+      setAmount(String(grandTotal / 100));
     }
     setStep(4);
   }
 
   function handleSubmit() {
     setError(null);
-    if (!selectedRoom) {
-      setError("Select a room type.");
+    if (validLines.length === 0) {
+      setError("Add at least one room.");
       return;
     }
     const payAmount = paymentMethod === "None" ? 0 : Number(amount || 0);
@@ -190,10 +274,12 @@ export default function NewBookingPage() {
       const res = await createAdminBooking({
         checkIn,
         checkOut,
-        adults,
-        children,
+        rooms: validLines.map((l) => ({
+          roomTypeId: l.roomTypeId,
+          adults: l.adults,
+          children: l.children,
+        })),
         source,
-        roomTypeId,
         mealPlan,
         addonIds: selectedAddons,
         guest: {
@@ -221,6 +307,9 @@ export default function NewBookingPage() {
           <ArrowLeft size={14} /> Back to bookings
         </Link>
         <h1 className="text-xl font-semibold text-gray-900">New Booking</h1>
+        <p className="text-xs text-gray-400 mt-0.5">
+          Book one or more rooms for a single guest.
+        </p>
       </div>
 
       {/* Stepper */}
@@ -272,7 +361,7 @@ export default function NewBookingPage() {
                     min={todayStr()}
                     onChange={(e) => {
                       setCheckIn(e.target.value);
-                      setRooms(null);
+                      resetRooms();
                     }}
                     className={inputClass}
                   />
@@ -285,41 +374,10 @@ export default function NewBookingPage() {
                     min={checkIn}
                     onChange={(e) => {
                       setCheckOut(e.target.value);
-                      setRooms(null);
+                      resetRooms();
                     }}
                     className={inputClass}
                   />
-                </div>
-                <div>
-                  <label className={labelClass}>Adults</label>
-                  <select
-                    value={adults}
-                    onChange={(e) => {
-                      setAdults(Number(e.target.value));
-                      setRooms(null);
-                    }}
-                    className={inputClass}
-                  >
-                    {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className={labelClass}>Children</label>
-                  <select
-                    value={children}
-                    onChange={(e) => setChildren(Number(e.target.value))}
-                    className={inputClass}
-                  >
-                    {Array.from({ length: 11 }, (_, i) => i).map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
                 </div>
                 <div className="sm:col-span-2">
                   <label className={labelClass}>Booking source</label>
@@ -348,47 +406,125 @@ export default function NewBookingPage() {
             </div>
           )}
 
-          {/* ── Step 2 — Room & meal plan ───────────────────────────────── */}
+          {/* ── Step 2 — Rooms & meal plan ──────────────────────────────── */}
           {step === 2 && (
             <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-              <h2 className="font-medium text-gray-900 text-sm">Room &amp; meal plan</h2>
-              <div className="space-y-2">
-                {rooms?.map((rt) => {
-                  const selected = rt.id === roomTypeId;
+              <div className="flex items-center justify-between">
+                <h2 className="font-medium text-gray-900 text-sm">Rooms</h2>
+                <span className="text-xs text-gray-400">
+                  {validLines.length} room{validLines.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {lines.map((line, idx) => {
+                  const rt = roomTypeFor(line.roomTypeId);
+                  const linePrice = priceForLine(line);
                   return (
-                    <label
-                      key={rt.id}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                        selected
-                          ? "border-[#1a3a2a] bg-[#1a3a2a]/5"
-                          : "border-gray-200 hover:border-gray-300"
-                      }`}
+                    <div
+                      key={line.id}
+                      className="rounded-lg border border-gray-200 p-3 space-y-3"
                     >
-                      <input
-                        type="radio"
-                        name="roomType"
-                        checked={selected}
-                        onChange={() => setRoomTypeId(rt.id)}
-                        className="mt-1 accent-[#1a3a2a]"
-                      />
-                      <div className="flex-1 flex items-start justify-between gap-3">
-                        <div>
-                          <div className="font-medium text-gray-900 text-sm">{rt.name}</div>
-                          <div className="text-xs text-gray-500 mt-0.5">
-                            {rt.availableCount} available · max {rt.maxAdults} adults · {rt.ratePlan.name}
-                          </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-gray-500">
+                          Room {idx + 1}
+                        </span>
+                        {lines.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeLine(line.id)}
+                            className="inline-flex items-center gap-1 text-xs text-red-500 hover:text-red-600"
+                          >
+                            <Trash2 size={13} /> Remove
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="sm:col-span-2">
+                          <label className={labelClass}>Room type</label>
+                          <select
+                            value={line.roomTypeId}
+                            onChange={(e) =>
+                              updateLine(line.id, { roomTypeId: e.target.value })
+                            }
+                            className={inputClass}
+                          >
+                            {rooms?.map((r) => (
+                              <option key={r.id} value={r.id}>
+                                {r.name} — {formatINR(r.basePrice)}/night ({r.availableCount} avail)
+                              </option>
+                            ))}
+                          </select>
                         </div>
-                        <div className="text-right shrink-0">
-                          <div className="font-semibold text-gray-900 text-sm">
-                            {formatINR(rt.basePrice)}
-                          </div>
-                          <div className="text-xs text-gray-400">per night</div>
+                        <div>
+                          <label className={labelClass}>Adults</label>
+                          <select
+                            value={line.adults}
+                            onChange={(e) =>
+                              updateLine(line.id, { adults: Number(e.target.value) })
+                            }
+                            className={inputClass}
+                          >
+                            {Array.from({ length: rt?.maxAdults ?? 4 }, (_, i) => i + 1).map(
+                              (n) => (
+                                <option key={n} value={n}>
+                                  {n}
+                                </option>
+                              )
+                            )}
+                          </select>
+                        </div>
+                        <div>
+                          <label className={labelClass}>Children</label>
+                          <select
+                            value={line.children}
+                            onChange={(e) =>
+                              updateLine(line.id, { children: Number(e.target.value) })
+                            }
+                            className={inputClass}
+                          >
+                            {Array.from({ length: (rt?.maxChildren ?? 2) + 1 }, (_, i) => i).map(
+                              (n) => (
+                                <option key={n} value={n}>
+                                  {n}
+                                </option>
+                              )
+                            )}
+                          </select>
                         </div>
                       </div>
-                    </label>
+
+                      {linePrice && (
+                        <div className="flex items-center justify-between text-xs text-gray-500 border-t border-gray-100 pt-2">
+                          <span>
+                            {linePrice.nights.length} night
+                            {linePrice.nights.length !== 1 ? "s" : ""}
+                          </span>
+                          <span className="font-medium text-gray-700">
+                            {formatINR(linePrice.totalAmount)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
+
+              <button
+                type="button"
+                onClick={addLine}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-dashed border-gray-300 text-gray-600 rounded-lg hover:border-[#1a3a2a] hover:text-[#1a3a2a] transition-colors w-full justify-center"
+              >
+                <Plus size={15} /> Add another room
+              </button>
+
+              {overbookedType && (
+                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                  Only {overbookedType.availableCount} {overbookedType.name} room(s) are
+                  available for these dates.
+                </p>
+              )}
 
               <div>
                 <label className={labelClass}>Meal plan</label>
@@ -614,18 +750,18 @@ export default function NewBookingPage() {
                     onChange={(e) => setAmount(e.target.value)}
                     className={inputClass}
                   />
-                  {price && (
+                  {hasPricing && (
                     <div className="flex gap-3 mt-1.5 text-xs">
                       <button
                         type="button"
-                        onClick={() => setAmount(String(price.totalAmount / 100))}
+                        onClick={() => setAmount(String(grandTotal / 100))}
                         className="text-[#1a3a2a] hover:underline"
                       >
-                        Full ({formatINR(price.totalAmount)})
+                        Full ({formatINR(grandTotal)})
                       </button>
                       <button
                         type="button"
-                        onClick={() => setAmount(String(Math.round(price.totalAmount / 2) / 100))}
+                        onClick={() => setAmount(String(Math.round(grandTotal / 2) / 100))}
                         className="text-[#1a3a2a] hover:underline"
                       >
                         50% advance
@@ -667,38 +803,54 @@ export default function NewBookingPage() {
         <div className="lg:col-span-1">
           <div className="bg-white rounded-xl border border-gray-200 p-5 sticky top-4">
             <h2 className="font-medium text-gray-900 text-sm mb-3">Summary</h2>
-            {!selectedRoom || !price ? (
+            {!hasPricing ? (
               <p className="text-xs text-gray-400">
-                Select dates and a room to see pricing.
+                Select dates and at least one room to see pricing.
               </p>
             ) : (
               <div className="space-y-2 text-sm">
                 <div className="text-xs text-gray-500">
-                  {selectedRoom.name}
-                  <span className="block mt-0.5">
-                    {price.nights.length} night{price.nights.length !== 1 ? "s" : ""} ·{" "}
-                    {mealPlanLabel[mealPlan]}
-                  </span>
+                  {validLines.length} room{validLines.length !== 1 ? "s" : ""} ·{" "}
+                  {nightsCount} night{nightsCount !== 1 ? "s" : ""} · {mealPlanLabel[mealPlan]}
+                </div>
+                <div className="space-y-1 border-t border-gray-100 pt-2">
+                  {linePrices.map((lp, i) => {
+                    const rt = roomTypeFor(lp.line.roomTypeId);
+                    return (
+                      <div key={lp.line.id} className="flex justify-between text-xs">
+                        <span className="text-gray-500 truncate pr-2">
+                          {i + 1}. {rt?.name ?? "Room"}
+                        </span>
+                        <span className="text-gray-600 whitespace-nowrap">
+                          {formatINR(lp.price?.totalAmount ?? 0)}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
                 <div className="border-t border-gray-100 pt-2 flex justify-between">
                   <span className="text-gray-500">Room subtotal</span>
-                  <span className="text-gray-700">{formatINR(price.roomSubtotal)}</span>
+                  <span className="text-gray-700">{formatINR(roomSubtotal)}</span>
                 </div>
-                {price.addonSubtotal > 0 && (
+                {extraCharges > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Extra guest charges</span>
+                    <span className="text-gray-700">{formatINR(extraCharges)}</span>
+                  </div>
+                )}
+                {addonBase > 0 && (
                   <div className="flex justify-between">
                     <span className="text-gray-500">Add-ons</span>
-                    <span className="text-gray-700">{formatINR(price.addonSubtotal)}</span>
+                    <span className="text-gray-700">{formatINR(addonBase)}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
                   <span className="text-gray-500">GST</span>
-                  <span className="text-gray-700">
-                    {formatINR(price.roomTax + price.addonTax)}
-                  </span>
+                  <span className="text-gray-700">{formatINR(gstTotal)}</span>
                 </div>
                 <div className="flex justify-between font-semibold text-base border-t border-gray-100 pt-2 mt-1">
                   <span className="text-gray-900">Total</span>
-                  <span className="text-gray-900">{formatINR(price.totalAmount)}</span>
+                  <span className="text-gray-900">{formatINR(grandTotal)}</span>
                 </div>
               </div>
             )}

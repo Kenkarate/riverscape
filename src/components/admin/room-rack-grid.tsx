@@ -7,6 +7,7 @@ import {
   Ban,
   CheckCircle2,
   ExternalLink,
+  Layers,
   Loader2,
   LogIn,
   LogOut,
@@ -15,7 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatINR } from "@/lib/pricing";
-import { createRackBooking } from "@/app/(admin)/admin/room-rack/actions";
+import { createRackBooking, createRackBulkBooking } from "@/app/(admin)/admin/room-rack/actions";
 import {
   updateBooking,
   checkInBooking,
@@ -116,10 +117,6 @@ function dayLabel(iso: string) {
 function dayNum(iso: string) {
   return parseLocal(iso).getDate();
 }
-function isWeekend(iso: string) {
-  const g = parseLocal(iso).getDay();
-  return g === 0 || g === 6;
-}
 
 const SOURCE_OPTIONS = [
   { value: "DIRECT", label: "Direct" },
@@ -144,6 +141,9 @@ type Panel =
       entry: RackEntry;
       roomNumber: string;
       roomTypeName: string;
+    }
+  | {
+      kind: "bulk";
     };
 
 export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: Props) {
@@ -170,6 +170,9 @@ export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: 
   const [paymentMethod, setPaymentMethod] = useState("None");
   const [amount, setAmount] = useState("");
   const [successRef, setSuccessRef] = useState<string | null>(null);
+
+  // bulk-only fields (multiple physical rooms for one guest)
+  const [bulkRoomIds, setBulkRoomIds] = useState<string[]>([]);
 
   // edit-only fields
   const [showCancel, setShowCancel] = useState(false);
@@ -203,6 +206,93 @@ export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: 
     setSuccessRef(null);
     setFormError(null);
     playEnter();
+  }
+
+  function openBulkPanel() {
+    setPanel({ kind: "bulk" });
+    setCheckIn(todayStr);
+    setCheckOut(nextISO(todayStr));
+    setBulkRoomIds([]);
+    setGuestName("");
+    setGuestPhone("");
+    setAdults(2);
+    setSource("WALK_IN");
+    setPaymentMethod("None");
+    setAmount("");
+    setSuccessRef(null);
+    setFormError(null);
+    playEnter();
+  }
+
+  // A physical room is "busy" in the chosen range if any non-cancelled booking
+  // overlaps a loaded date within [checkIn, checkOut). Dates outside the loaded
+  // month can't be judged here — the server re-validates on submit.
+  function roomBusyInRange(roomId: string): boolean {
+    for (const iso of dates) {
+      if (iso < checkIn || iso >= checkOut) continue;
+      const entries = cellMap[roomId]?.[iso] ?? [];
+      if (entries.some((e) => e.status !== "CANCELLED" && e.status !== "NO_SHOW")) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function toggleBulkRoom(roomId: string) {
+    setBulkRoomIds((prev) =>
+      prev.includes(roomId) ? prev.filter((id) => id !== roomId) : [...prev, roomId]
+    );
+  }
+
+  function handleBulkSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!panel || panel.kind !== "bulk") return;
+    setFormError(null);
+
+    if (!guestName.trim()) {
+      setFormError("Guest name is required.");
+      return;
+    }
+    const cleanPhone = guestPhone.replace(/\D/g, "");
+    if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+      setFormError("Enter a valid 10-digit Indian mobile number.");
+      return;
+    }
+    if (parseLocal(checkOut) <= parseLocal(checkIn)) {
+      setFormError("Check-out must be after check-in.");
+      return;
+    }
+    const ids = bulkRoomIds.filter((id) => !roomBusyInRange(id));
+    if (ids.length === 0) {
+      setFormError("Select at least one available room.");
+      return;
+    }
+    const payAmount = paymentMethod === "None" ? 0 : Number(amount || 0);
+    if (paymentMethod !== "None" && (Number.isNaN(payAmount) || payAmount < 0)) {
+      setFormError("Enter a valid payment amount.");
+      return;
+    }
+
+    startTransition(async () => {
+      const res = await createRackBulkBooking({
+        roomIds: ids,
+        checkIn,
+        checkOut,
+        guestName: guestName.trim(),
+        guestPhone: cleanPhone,
+        adultsPerRoom: adults,
+        source,
+        paymentMethod,
+        amountRupees: payAmount,
+      });
+      if (res.success && res.bookingRef) {
+        setSuccessRef(res.bookingRef);
+        router.refresh();
+        setTimeout(() => closePanel(), 2000);
+      } else {
+        setFormError(res.error ?? "Could not create the bulk booking.");
+      }
+    });
   }
 
   function openEditPanel(entry: RackEntry, room: RackRoom) {
@@ -352,8 +442,9 @@ export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: 
 
   return (
     <div className="space-y-4">
-      {/* ─── Payment status legend ────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 bg-white rounded-xl border border-gray-200 px-3 py-2 text-[11px] text-gray-500 w-fit">
+      {/* ─── Header: payment legend + bulk booking ─────────────────────────────── */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 bg-white rounded-xl border border-gray-200 px-3 py-2 text-[11px] text-gray-500 w-fit">
         <span className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" /> Fully paid
         </span>
@@ -366,6 +457,14 @@ export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: 
         <span className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-gray-400 inline-block" /> Cancelled
         </span>
+        </div>
+        <button
+          type="button"
+          onClick={openBulkPanel}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm bg-[#1a3a2a] text-white rounded-lg hover:bg-[#14301f] transition-colors"
+        >
+          <Layers size={15} /> Bulk Booking
+        </button>
       </div>
 
       {/* ─── Booking Gantt ────────────────────────────────────────────────────── */}
@@ -547,11 +646,15 @@ export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: 
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
               <div className="min-w-0">
                 <h2 className="text-sm font-semibold text-gray-900 truncate">
-                  {panel.kind === "create"
+                  {panel.kind === "bulk"
+                    ? "Bulk Booking"
+                    : panel.kind === "create"
                     ? `New Booking — Room ${panel.roomNumber}`
                     : `Manage Booking — Room ${panel.roomNumber}`}
                 </h2>
-                <p className="text-xs text-gray-400 mt-0.5 truncate">{panel.roomTypeName}</p>
+                <p className="text-xs text-gray-400 mt-0.5 truncate">
+                  {panel.kind === "bulk" ? "Multiple rooms · one guest" : panel.roomTypeName}
+                </p>
               </div>
               <button
                 type="button"
@@ -563,7 +666,7 @@ export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: 
               </button>
             </div>
 
-            {panel.kind === "create" && successRef ? (
+            {successRef ? (
               /* ─── Booking success ─────────────────────────────────────────── */
               <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
                 <CheckCircle2 size={40} className="text-green-500" />
@@ -581,6 +684,225 @@ export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: 
                   View Booking
                 </Link>
               </div>
+            ) : panel.kind === "bulk" ? (
+              /* ─── Bulk booking form ───────────────────────────────────────── */
+              <form
+                onSubmit={handleBulkSubmit}
+                className="flex-1 overflow-y-auto px-5 py-4 space-y-4"
+              >
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Check-in</label>
+                    <input
+                      type="date"
+                      value={checkIn}
+                      onChange={(e) => handleCheckInChange(e.target.value)}
+                      required
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a2a]/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Check-out</label>
+                    <input
+                      type="date"
+                      value={checkOut}
+                      min={nextISO(checkIn)}
+                      onChange={(e) => setCheckOut(e.target.value)}
+                      required
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a2a]/30"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Guest Name</label>
+                  <input
+                    type="text"
+                    value={guestName}
+                    onChange={(e) => setGuestName(e.target.value)}
+                    placeholder="Full name"
+                    required
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a2a]/30"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Guest Phone</label>
+                  <input
+                    type="tel"
+                    value={guestPhone}
+                    onChange={(e) => setGuestPhone(e.target.value)}
+                    placeholder="10-digit mobile number"
+                    inputMode="numeric"
+                    required
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a2a]/30"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">
+                      Adults / room
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={adults}
+                      onChange={(e) =>
+                        setAdults(Math.max(1, Math.min(10, Number(e.target.value) || 1)))
+                      }
+                      required
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a2a]/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Source</label>
+                    <select
+                      value={source}
+                      onChange={(e) => setSource(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a2a]/30 bg-white"
+                    >
+                      {SOURCE_OPTIONS.map((s) => (
+                        <option key={s.value} value={s.value}>
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-medium text-gray-500">
+                      Select rooms
+                    </label>
+                    <span className="text-[11px] text-gray-400">
+                      {bulkRoomIds.filter((id) => !roomBusyInRange(id)).length} selected
+                    </span>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-200 divide-y divide-gray-100">
+                    {rooms.map((room, idx) => {
+                      const showGroup =
+                        idx === 0 || rooms[idx - 1].roomTypeName !== room.roomTypeName;
+                      const busy = roomBusyInRange(room.id);
+                      const checked = bulkRoomIds.includes(room.id) && !busy;
+                      return (
+                        <Fragment key={room.id}>
+                          {showGroup && (
+                            <div className="px-3 py-1 bg-gray-50 text-[10px] font-semibold uppercase tracking-wide text-[#1a3a2a]">
+                              {room.roomTypeName}
+                            </div>
+                          )}
+                          <label
+                            className={cn(
+                              "flex items-center justify-between gap-2 px-3 py-2 text-sm",
+                              busy
+                                ? "opacity-50 cursor-not-allowed"
+                                : "cursor-pointer hover:bg-gray-50"
+                            )}
+                          >
+                            <span className="flex items-center gap-2.5">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={busy}
+                                onChange={() => toggleBulkRoom(room.id)}
+                                className="accent-[#1a3a2a]"
+                              />
+                              <span className="text-gray-800">Room {room.number}</span>
+                              {room.floor && (
+                                <span className="text-[11px] text-gray-400">
+                                  Floor {room.floor}
+                                </span>
+                              )}
+                            </span>
+                            {busy && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">
+                                Booked
+                              </span>
+                            )}
+                          </label>
+                        </Fragment>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    Each selected room is priced from its room type. Rooms booked within the
+                    chosen dates are disabled.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">
+                      Payment Method
+                    </label>
+                    <select
+                      value={paymentMethod}
+                      onChange={(e) => setPaymentMethod(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a2a]/30 bg-white"
+                    >
+                      {PAYMENT_METHODS.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {paymentMethod !== "None" && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">
+                        Amount Paid (₹)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="1"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                        placeholder="0"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a2a]/30"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {paymentMethod === "None" && (
+                  <p className="text-xs text-gray-500">
+                    No payment recorded — booking will be created as <strong>Pending</strong>.
+                  </p>
+                )}
+
+                {formError && (
+                  <p className="text-red-600 text-xs bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                    {formError}
+                  </p>
+                )}
+
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    type="submit"
+                    disabled={isPending}
+                    className="inline-flex items-center justify-center gap-1.5 flex-1 bg-[#1a3a2a] text-white rounded-lg py-2.5 text-sm font-medium hover:bg-[#14301f] transition-colors disabled:opacity-50"
+                  >
+                    {isPending ? (
+                      <>
+                        <Loader2 size={15} className="animate-spin" /> Creating…
+                      </>
+                    ) : (
+                      "Create Bulk Booking"
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closePanel}
+                    className="px-4 py-2.5 text-sm text-gray-500 hover:text-gray-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
             ) : panel.kind === "create" ? (
               /* ─── Create booking form ─────────────────────────────────────── */
               <form

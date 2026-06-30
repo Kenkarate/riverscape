@@ -83,9 +83,12 @@ export async function getActiveAddons(): Promise<ActiveAddon[]> {
 }
 
 /**
- * Creates a booking on behalf of a guest (walk-in / phone / OTA), records an
- * optional captured payment, auto-assigns a physical room, and redirects to the
- * new booking's detail page. Staff-only.
+ * Creates a booking on behalf of a guest (walk-in / phone / OTA). Supports
+ * **multiple rooms in one booking** — each room line carries its own room type
+ * and occupancy. Pricing is recomputed authoritatively per line and summed,
+ * one physical room is auto-assigned per line (no two lines share a room), an
+ * optional captured payment is recorded, and the new booking's detail page is
+ * returned via redirect. Staff-only.
  */
 export async function createAdminBooking(
   input: AdminBookingInput
@@ -103,8 +106,14 @@ export async function createAdminBooking(
     return { ok: false, message: "Check-out must be after check-in." };
   }
 
-  const adults = Math.max(1, Math.min(10, Math.round(input.adults)));
-  const children = Math.max(0, Math.min(10, Math.round(input.children)));
+  // ── Validate room lines ────────────────────────────────────────────────────
+  const lines = (input.rooms ?? []).filter((r) => r && r.roomTypeId);
+  if (lines.length === 0) {
+    return { ok: false, message: "Add at least one room to the booking." };
+  }
+  if (lines.length > 10) {
+    return { ok: false, message: "A single booking can hold at most 10 rooms." };
+  }
 
   const source = (BOOKING_SOURCE_OPTIONS as string[]).includes(input.source)
     ? (input.source as BookingSource)
@@ -123,27 +132,11 @@ export async function createAdminBooking(
   const guestIdType = input.guest.idType?.trim() || null;
   const guestIdNumber = input.guest.idNumber?.trim() || null;
 
-  // ── Load property + room type + rate plan ──────────────────────────────────
+  // ── Load property ──────────────────────────────────────────────────────────
   const property = await prisma.property.findUnique({ where: { slug: "riverscape" } });
   if (!property) return { ok: false, message: "Property not found." };
 
-  const roomType = await prisma.roomType.findFirst({
-    where: { id: input.roomTypeId, propertyId: property.id, isActive: true },
-  });
-  if (!roomType) return { ok: false, message: "Select a valid room type." };
-
-  const ratePlan = await prisma.ratePlan.findFirst({
-    where: {
-      roomTypeId: roomType.id,
-      isActive: true,
-      isPackage: false,
-      minStay: { lte: nights },
-    },
-    orderBy: { basePrice: "asc" },
-  });
-  if (!ratePlan) return { ok: false, message: "No rate plan available for these dates." };
-
-  // ── Load add-ons ───────────────────────────────────────────────────────────
+  // ── Load add-ons (booking-level, attached once) ────────────────────────────
   const addonIds = Array.from(new Set(input.addonIds ?? []));
   const addons = addonIds.length
     ? await prisma.addon.findMany({
@@ -151,23 +144,129 @@ export async function createAdminBooking(
       })
     : [];
 
-  // ── Price (authoritative, recomputed server-side) ──────────────────────────
-  const baseOccupancy = roomType.baseOccupancy ?? 2;
-  const extraAdults = Math.max(0, adults - baseOccupancy);
+  // ── Build + price each room line; auto-assign one physical room per line ────
+  interface BuiltLine {
+    roomTypeId: string;
+    roomTypeName: string;
+    ratePlanId: string;
+    assignedRoomId: string | null;
+    children: number;
+    extraAdults: number;
+    roomSubtotal: number;
+    roomTax: number;
+    extraCharges: number; // extra-guest charges (untaxed), folded into addonSubtotal
+    lineTotal: number;
+    nights: { date: string; rate: number; gstRate: number; taxAmount: number }[];
+  }
 
-  const price = calculatePrice({
-    checkIn,
-    checkOut,
-    ratePerNight: ratePlan.basePrice,
-    extraAdults,
-    extraAdultPrice: ratePlan.extraAdultPrice,
-    extraChildrenWithBed: 0,
-    extraChildWithBedPrice: ratePlan.extraChildWithBed,
-    extraChildrenNoBed: children,
-    extraChildNoBedPrice: ratePlan.extraChildNoBed,
-    addons: addons.map((a) => ({ price: a.price, quantity: 1, gstRate: a.gstRate })),
-    couponDiscount: 0,
-  });
+  const built: BuiltLine[] = [];
+  const assignedRoomIds: string[] = [];
+  let bookingAdults = 0;
+  let bookingChildren = 0;
+  let roomSubtotalSum = 0;
+  let roomTaxSum = 0;
+  let extraChargesSum = 0;
+
+  for (const line of lines) {
+    const adults = Math.max(1, Math.min(10, Math.round(line.adults || 1)));
+    const children = Math.max(0, Math.min(10, Math.round(line.children || 0)));
+
+    const roomType = await prisma.roomType.findFirst({
+      where: { id: line.roomTypeId, propertyId: property.id, isActive: true },
+    });
+    if (!roomType) return { ok: false, message: "One of the selected room types is not available." };
+
+    const ratePlan = await prisma.ratePlan.findFirst({
+      where: {
+        roomTypeId: roomType.id,
+        isActive: true,
+        isPackage: false,
+        minStay: { lte: nights },
+      },
+      orderBy: { basePrice: "asc" },
+    });
+    if (!ratePlan) {
+      return { ok: false, message: `No rate plan available for ${roomType.name} on these dates.` };
+    }
+
+    const baseOccupancy = roomType.baseOccupancy ?? 2;
+    const extraAdults = Math.max(0, adults - baseOccupancy);
+
+    // Price the room line on its own (add-ons are applied once at booking level).
+    const price = calculatePrice({
+      checkIn,
+      checkOut,
+      ratePerNight: ratePlan.basePrice,
+      extraAdults,
+      extraAdultPrice: ratePlan.extraAdultPrice,
+      extraChildrenWithBed: 0,
+      extraChildWithBedPrice: ratePlan.extraChildWithBed,
+      extraChildrenNoBed: children,
+      extraChildNoBedPrice: ratePlan.extraChildNoBed,
+      addons: [],
+      couponDiscount: 0,
+    });
+
+    // Auto-assign a free physical room, excluding ones already taken by an
+    // earlier line in THIS booking.
+    const candidate = await prisma.room.findFirst({
+      where: {
+        roomTypeId: roomType.id,
+        isActive: true,
+        ...(assignedRoomIds.length ? { id: { notIn: assignedRoomIds } } : {}),
+        housekeeping: { not: "OUT_OF_ORDER" },
+        bookingRooms: {
+          none: {
+            booking: { status: { in: ["CONFIRMED", "CHECKED_IN"] } },
+            checkIn: { lt: checkOut },
+            checkOut: { gt: checkIn },
+          },
+        },
+        maintenanceBlocks: {
+          none: {
+            startDate: { lt: checkOut },
+            endDate: { gt: checkIn },
+            status: "ACTIVE",
+          },
+        },
+      },
+      orderBy: { number: "asc" },
+    });
+    if (candidate) assignedRoomIds.push(candidate.id);
+
+    built.push({
+      roomTypeId: roomType.id,
+      roomTypeName: roomType.name,
+      ratePlanId: ratePlan.id,
+      assignedRoomId: candidate?.id ?? null,
+      children,
+      extraAdults,
+      roomSubtotal: price.roomSubtotal,
+      roomTax: price.roomTax,
+      extraCharges: price.addonSubtotal, // extra-guest charges when addons=[]
+      lineTotal: price.totalAmount,
+      nights: price.nights,
+    });
+
+    bookingAdults += adults;
+    bookingChildren += children;
+    roomSubtotalSum += price.roomSubtotal;
+    roomTaxSum += price.roomTax;
+    extraChargesSum += price.addonSubtotal;
+  }
+
+  // ── Real add-on totals (booking-level, quantity 1 each) ────────────────────
+  const realAddonBase = addons.reduce((s, a) => s + a.price, 0);
+  const realAddonTax = addons.reduce(
+    (s, a) => s + Math.round((a.price * a.gstRate) / 100),
+    0
+  );
+
+  // ── Booking aggregates (mirrors calculatePrice's tax/total conventions) ────
+  const roomSubtotal = roomSubtotalSum;
+  const addonSubtotal = extraChargesSum + realAddonBase;
+  const taxAmount = roomTaxSum + realAddonTax;
+  const totalAmount = roomSubtotal + addonSubtotal + taxAmount; // discount = 0
 
   // ── Payment ────────────────────────────────────────────────────────────────
   const noPayment = input.payment.method === "None" || !input.payment.method;
@@ -177,36 +276,11 @@ export async function createAdminBooking(
     if (Number.isNaN(rupees) || rupees < 0) {
       return { ok: false, message: "Enter a valid payment amount." };
     }
-    paidAmount = Math.min(price.totalAmount, Math.round(rupees * 100));
+    paidAmount = Math.min(totalAmount, Math.round(rupees * 100));
   }
-  const balanceDue = Math.max(0, price.totalAmount - paidAmount);
-  const finalStatus = paidAmount >= price.totalAmount && price.totalAmount > 0 ? "CONFIRMED" : "PENDING";
-  const paymentType: PaymentType = paidAmount >= price.totalAmount ? "FULL" : "ADVANCE";
-
-  // ── Auto-assign a physical room (same query pattern as razorpay verify) ─────
-  const candidate = await prisma.room.findFirst({
-    where: {
-      roomTypeId: roomType.id,
-      isActive: true,
-      housekeeping: { not: "OUT_OF_ORDER" },
-      bookingRooms: {
-        none: {
-          booking: { status: { in: ["CONFIRMED", "CHECKED_IN"] } },
-          checkIn: { lt: checkOut },
-          checkOut: { gt: checkIn },
-        },
-      },
-      maintenanceBlocks: {
-        none: {
-          startDate: { lt: checkOut },
-          endDate: { gt: checkIn },
-          status: "ACTIVE",
-        },
-      },
-    },
-    orderBy: { number: "asc" },
-  });
-  const assignedRoomId = candidate?.id ?? null;
+  const balanceDue = Math.max(0, totalAmount - paidAmount);
+  const finalStatus = paidAmount >= totalAmount && totalAmount > 0 ? "CONFIRMED" : "PENDING";
+  const paymentType: PaymentType = paidAmount >= totalAmount ? "FULL" : "ADVANCE";
 
   const bookingRef = "RS" + crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase();
   const now = new Date();
@@ -239,7 +313,7 @@ export async function createAdminBooking(
         });
       }
 
-      // 2. Create booking
+      // 2. Create booking (occupancy summed across all room lines)
       const booking = await tx.booking.create({
         data: {
           bookingRef,
@@ -250,48 +324,50 @@ export async function createAdminBooking(
           status: finalStatus,
           checkIn,
           checkOut,
-          adults,
-          children,
+          adults: bookingAdults,
+          children: bookingChildren,
           mealPlan,
-          roomSubtotal: price.roomSubtotal,
-          addonSubtotal: price.addonSubtotal,
-          discountAmount: price.discountAmount,
-          taxAmount: price.roomTax + price.addonTax,
-          totalAmount: price.totalAmount,
+          roomSubtotal,
+          addonSubtotal,
+          discountAmount: 0,
+          taxAmount,
+          totalAmount,
           paidAmount,
           balanceDue,
           currency: "INR",
         },
       });
 
-      // 3. Create BookingRoom + nights
-      const bookingRoom = await tx.bookingRoom.create({
-        data: {
-          bookingId: booking.id,
-          roomTypeId: roomType.id,
-          ratePlanId: ratePlan.id,
-          roomId: assignedRoomId,
-          checkIn,
-          checkOut,
-          extraAdults,
-          extraChildren: children,
-          subtotal: price.roomSubtotal,
-          taxAmount: price.roomTax,
-          status: finalStatus,
-        },
-      });
+      // 3. Create one BookingRoom (+ nights) per room line
+      for (const b of built) {
+        const bookingRoom = await tx.bookingRoom.create({
+          data: {
+            bookingId: booking.id,
+            roomTypeId: b.roomTypeId,
+            ratePlanId: b.ratePlanId,
+            roomId: b.assignedRoomId,
+            checkIn,
+            checkOut,
+            extraAdults: b.extraAdults,
+            extraChildren: b.children,
+            subtotal: b.roomSubtotal,
+            taxAmount: b.roomTax,
+            status: finalStatus,
+          },
+        });
 
-      await tx.bookingRoomNight.createMany({
-        data: price.nights.map((n) => ({
-          bookingRoomId: bookingRoom.id,
-          date: new Date(n.date),
-          rate: n.rate,
-          gstRate: n.gstRate,
-          taxAmount: n.taxAmount,
-        })),
-      });
+        await tx.bookingRoomNight.createMany({
+          data: b.nights.map((n) => ({
+            bookingRoomId: bookingRoom.id,
+            date: new Date(n.date),
+            rate: n.rate,
+            gstRate: n.gstRate,
+            taxAmount: n.taxAmount,
+          })),
+        });
+      }
 
-      // 4. Create BookingAddon records
+      // 4. Create BookingAddon records (booking-level)
       if (addons.length > 0) {
         await tx.bookingAddon.createMany({
           data: addons.map((a) => {
@@ -331,6 +407,7 @@ export async function createAdminBooking(
           action: "BOOKING_CREATED",
           entityType: "Booking",
           entityId: booking.id,
+          after: { rooms: built.length, totalAmount },
         },
       });
     });
@@ -339,5 +416,6 @@ export async function createAdminBooking(
   }
 
   revalidatePath("/admin/bookings");
+  revalidatePath("/admin/room-rack");
   redirect(`/admin/bookings/${bookingRef}`);
 }

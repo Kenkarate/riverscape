@@ -121,13 +121,6 @@ function isWeekend(iso: string) {
   return g === 0 || g === 6;
 }
 
-// Progressive disclosure: 10 days on mobile, 20 on tablet, all on desktop.
-function colVisibility(i: number) {
-  if (i < 10) return "";
-  if (i < 20) return "hidden md:table-cell";
-  return "hidden lg:table-cell";
-}
-
 const SOURCE_OPTIONS = [
   { value: "DIRECT", label: "Direct" },
   { value: "WALK_IN", label: "Walk-in" },
@@ -384,15 +377,14 @@ export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: 
                 <th className="sticky left-0 top-0 z-30 bg-gray-50 px-2 sm:px-3 py-2.5 text-left font-medium text-gray-500 whitespace-nowrap min-w-[112px] sm:min-w-[160px] border-b border-r border-gray-200">
                   Room
                 </th>
-                {dates.map((iso, i) => {
+                {dates.map((iso) => {
                   const today = iso === todayStr;
                   return (
                     <th
                       key={iso}
                       className={cn(
                         "sticky top-0 z-20 px-0.5 py-1.5 text-center font-medium w-[44px] min-w-[44px] sm:w-[56px] sm:min-w-[56px] lg:w-[72px] lg:min-w-[72px] border-b border-r border-gray-100",
-                        today ? "bg-amber-100 text-[#1a3a2a]" : "bg-gray-50 text-gray-500",
-                        colVisibility(i)
+                        today ? "bg-amber-100 text-[#1a3a2a]" : "bg-gray-50 text-gray-500"
                       )}
                     >
                       <div
@@ -437,7 +429,7 @@ export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: 
                           {room.floor ? ` · Floor ${room.floor}` : ""}
                         </div>
                       </td>
-                      {dates.map((iso, i) => {
+                      {dates.map((iso) => {
                         const entries = cellMap[room.id]?.[iso] ?? [];
                         const isEmpty = entries.length === 0;
                         const today = iso === todayStr;
@@ -449,8 +441,7 @@ export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: 
                             className={cn(
                               "h-12 w-[44px] min-w-[44px] sm:w-[56px] sm:min-w-[56px] lg:w-[72px] lg:min-w-[72px] align-middle px-0.5 border-b border-r border-gray-100",
                               today ? "bg-amber-50/60" : "",
-                              isEmpty ? "cursor-pointer hover:bg-[#1a3a2a]/5 group/cell" : "",
-                              colVisibility(i)
+                              isEmpty ? "cursor-pointer hover:bg-[#1a3a2a]/5 group/cell" : ""
                             )}
                             title={isEmpty ? "Click to create a booking" : undefined}
                           >

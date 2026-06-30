@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { formatINR } from "@/lib/pricing";
 import { bookingStatusBadge, sourceBadge } from "@/lib/badges";
+import GuestEditPanel from "@/components/admin/guest-edit-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,15 @@ export default async function GuestDetailPage({
   const totalBookings = bookings.length;
   const completedStays = bookings.filter((b) => b.status === "CHECKED_OUT").length;
   const totalSpent = bookings.reduce((s, b) => s + b.totalAmount, 0);
+  const totalPaid = bookings.reduce((s, b) => s + b.paidAmount, 0);
+
+  // Average stay length in nights, across all bookings.
+  const totalNights = bookings.reduce(
+    (s, b) =>
+      s + Math.max(1, Math.round((b.checkOut.getTime() - b.checkIn.getTime()) / 86400000)),
+    0
+  );
+  const avgStay = totalBookings ? totalNights / totalBookings : 0;
 
   const checkInDates = bookings.map((b) => b.checkIn);
   const firstStay = checkInDates.length
@@ -75,7 +85,12 @@ export default async function GuestDetailPage({
   const stats = [
     { label: "Total Bookings", value: totalBookings },
     { label: "Completed Stays", value: completedStays },
-    { label: "Total Spent", value: formatINR(totalSpent) },
+    {
+      label: "Avg. Stay",
+      value: totalBookings ? `${avgStay.toFixed(1)} ${avgStay === 1 ? "night" : "nights"}` : "—",
+    },
+    { label: "Total Billed", value: formatINR(totalSpent) },
+    { label: "Total Paid", value: formatINR(totalPaid) },
     {
       label: "Stay Range",
       value:
@@ -102,10 +117,22 @@ export default async function GuestDetailPage({
           <h1 className="text-xl font-semibold text-gray-900">{guest.name}</h1>
           <p className="text-sm text-gray-400 mt-0.5">{guest.phone}</p>
         </div>
+        <GuestEditPanel
+          guestId={guest.id}
+          initial={{
+            name: guest.name,
+            phone: guest.phone,
+            email: guest.email,
+            address: guest.address,
+            idType: guest.idType,
+            idNumber: guest.idNumber,
+            country: guest.country,
+          }}
+        />
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         {stats.map((s) => (
           <div key={s.label} className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="text-lg font-semibold text-gray-900">{s.value}</div>
@@ -152,6 +179,7 @@ export default async function GuestDetailPage({
                     <th className="px-4 py-3 text-left font-medium text-gray-500 text-xs">Status</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-500 text-xs">Source</th>
                     <th className="px-4 py-3 text-right font-medium text-gray-500 text-xs">Total</th>
+                    <th className="px-4 py-3 text-right font-medium text-gray-500 text-xs">Balance</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -189,6 +217,11 @@ export default async function GuestDetailPage({
                         </td>
                         <td className="px-4 py-3 text-right text-gray-900 font-medium text-xs whitespace-nowrap">
                           {formatINR(b.totalAmount)}
+                        </td>
+                        <td className="px-4 py-3 text-right text-xs whitespace-nowrap">
+                          <span className={b.balanceDue > 0 ? "text-amber-600 font-medium" : "text-gray-400"}>
+                            {formatINR(b.balanceDue)}
+                          </span>
                         </td>
                       </tr>
                     );

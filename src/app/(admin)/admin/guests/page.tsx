@@ -1,11 +1,14 @@
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
 import Link from "next/link";
 import { AlertCircle, Search } from "lucide-react";
 import { formatINR } from "@/lib/pricing";
+import DeleteGuestButton from "@/components/admin/delete-guest-button";
 
 export const dynamic = "force-dynamic";
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 50;
+const ADMIN_ROLES = ["ADMIN", "SUPER_ADMIN"];
 
 async function getGuests(q: string | undefined, page: number) {
   const skip = (page - 1) * PAGE_SIZE;
@@ -53,6 +56,10 @@ export default async function GuestsPage({
   const sp = await searchParams;
   const q = sp.q?.trim() || undefined;
   const page = Math.max(1, parseInt(sp.page ?? "1", 10));
+
+  const session = await auth();
+  const role = (session?.user as { role?: string })?.role ?? null;
+  const isAdmin = !!role && ADMIN_ROLES.includes(role);
 
   let data = null;
   let dbError = false;
@@ -137,6 +144,7 @@ export default async function GuestsPage({
                   <th className="px-4 py-3 text-right font-medium text-gray-500 text-xs">Total Spent</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-500 text-xs">Last Check-in</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-500 text-xs">Country</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-500 text-xs">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -165,6 +173,19 @@ export default async function GuestsPage({
                         {lastCheckIn ? formatDate(lastCheckIn) : "—"}
                       </td>
                       <td className="px-4 py-3 text-gray-600 text-xs">{g.country || "—"}</td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center justify-end gap-2">
+                          <Link
+                            href={`/admin/guests/${g.id}`}
+                            className="inline-flex items-center px-2.5 py-1.5 text-xs font-medium border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                          >
+                            View
+                          </Link>
+                          {isAdmin && (
+                            <DeleteGuestButton guestId={g.id} guestName={g.name} />
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}

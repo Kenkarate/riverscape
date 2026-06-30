@@ -1,17 +1,60 @@
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { AlertCircle, Plus } from "lucide-react";
 import { formatINR } from "@/lib/pricing";
 import { bookingStatusBadge, sourceBadge, BOOKING_STATUS_OPTIONS } from "@/lib/badges";
-import type { BookingStatus, BookingSource } from "@prisma/client";
+import BookingRowActions from "@/components/admin/booking-row-actions";
+import type { BookingStatus, BookingSource, Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
+
+// Quick semantic views shown as filter tabs above the table.
+const VIEW_TABS = [
+  { key: "", label: "All" },
+  { key: "today", label: "Today" },
+  { key: "arriving", label: "Arriving" },
+  { key: "departing", label: "Departing" },
+  { key: "inhouse", label: "In-House" },
+  { key: "cancelled", label: "Cancelled" },
+] as const;
 
 function toDate(str: string | undefined): Date | undefined {
   if (!str) return undefined;
   const d = new Date(str);
   return isNaN(d.getTime()) ? undefined : d;
+}
+
+/** Builds the where-clauses for a semantic "view" tab. Empty for "All". */
+function viewClauses(view: string | undefined): Prisma.BookingWhereInput[] {
+  if (!view) return [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+
+  switch (view) {
+    case "arriving":
+      return [{ status: "CONFIRMED" }, { checkIn: { gte: today, lt: tomorrow } }];
+    case "departing":
+      return [{ status: "CHECKED_IN" }, { checkOut: { gte: today, lt: tomorrow } }];
+    case "inhouse":
+      return [{ status: "CHECKED_IN" }];
+    case "cancelled":
+      return [{ status: "CANCELLED" }];
+    case "today":
+      // Anything with front-desk activity today: arriving, departing or in-house.
+      return [
+        {
+          OR: [
+            { checkIn: { gte: today, lt: tomorrow } },
+            { checkOut: { gte: today, lt: tomorrow } },
+            { AND: [{ status: "CHECKED_IN" }, { checkIn: { lte: today } }, { checkOut: { gt: today } }] },
+          ],
+        },
+      ];
+    default:
+      return [];
+  }
 }
 
 async function getBookings(params: {
@@ -20,32 +63,35 @@ async function getBookings(params: {
   from?: string;
   to?: string;
   q?: string;
+  view?: string;
   page: number;
 }) {
   const PAGE_SIZE = 25;
   const skip = (params.page - 1) * PAGE_SIZE;
 
-  const where = {
-    ...(params.status ? { status: params.status } : {}),
-    ...(params.source ? { source: params.source } : {}),
-    ...(params.from || params.to
-      ? {
-          checkIn: {
-            ...(params.from ? { gte: toDate(params.from) } : {}),
-            ...(params.to ? { lte: toDate(params.to) } : {}),
-          },
-        }
-      : {}),
-    ...(params.q
-      ? {
-          OR: [
-            { bookingRef: { contains: params.q, mode: "insensitive" as const } },
-            { guest: { name: { contains: params.q, mode: "insensitive" as const } } },
-            { guest: { phone: { contains: params.q, mode: "insensitive" as const } } },
-          ],
-        }
-      : {}),
-  };
+  const and: Prisma.BookingWhereInput[] = [];
+  if (params.status) and.push({ status: params.status });
+  if (params.source) and.push({ source: params.source });
+  if (params.from || params.to) {
+    and.push({
+      checkIn: {
+        ...(params.from ? { gte: toDate(params.from) } : {}),
+        ...(params.to ? { lte: toDate(params.to) } : {}),
+      },
+    });
+  }
+  if (params.q) {
+    and.push({
+      OR: [
+        { bookingRef: { contains: params.q, mode: "insensitive" } },
+        { guest: { name: { contains: params.q, mode: "insensitive" } } },
+        { guest: { phone: { contains: params.q, mode: "insensitive" } } },
+      ],
+    });
+  }
+  and.push(...viewClauses(params.view));
+
+  const where: Prisma.BookingWhereInput = and.length ? { AND: and } : {};
 
   const [bookings, total] = await Promise.all([
     prisma.booking.findMany({
@@ -74,6 +120,7 @@ interface SearchParams {
   from?: string;
   to?: string;
   q?: string;
+  view?: string;
   page?: string;
 }
 
@@ -97,6 +144,7 @@ export default async function BookingsPage({
       from: sp.from,
       to: sp.to,
       q: sp.q,
+      view: sp.view,
       page,
     });
   } catch {
@@ -124,10 +172,25 @@ export default async function BookingsPage({
     if (sp.from) next.from = sp.from;
     if (sp.to) next.to = sp.to;
     if (sp.q) next.q = sp.q;
+    if (sp.view) next.view = sp.view;
     next.page = "1";
     Object.assign(next, overrides);
     return "/admin/bookings?" + new URLSearchParams(next).toString();
   }
+
+  // Tab links preserve the free-text search + date window, swap the active view,
+  // and clear the status dropdown (each view sets its own status semantics).
+  function tabUrl(view: string) {
+    const next: Record<string, string> = {};
+    if (sp.q) next.q = sp.q;
+    if (sp.from) next.from = sp.from;
+    if (sp.to) next.to = sp.to;
+    if (view) next.view = view;
+    const qs = new URLSearchParams(next).toString();
+    return qs ? `/admin/bookings?${qs}` : "/admin/bookings";
+  }
+
+  const activeView = sp.view ?? "";
 
   return (
     <div className="space-y-4">
@@ -145,8 +208,29 @@ export default async function BookingsPage({
         </div>
       </div>
 
+      {/* Quick view tabs */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {VIEW_TABS.map((tab) => {
+          const active = activeView === tab.key;
+          return (
+            <Link
+              key={tab.key || "all"}
+              href={tabUrl(tab.key)}
+              className={
+                active
+                  ? "px-3 py-1.5 text-sm rounded-lg bg-[#1a3a2a] text-white font-medium transition-colors"
+                  : "px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+              }
+            >
+              {tab.label}
+            </Link>
+          );
+        })}
+      </div>
+
       {/* Filters */}
       <form method="GET" action="/admin/bookings" className="bg-white rounded-xl border border-gray-200 p-4">
+        {sp.view && <input type="hidden" name="view" value={sp.view} />}
         <div className="flex flex-wrap gap-3 items-end">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Search</label>
@@ -196,7 +280,7 @@ export default async function BookingsPage({
           >
             Filter
           </button>
-          {(sp.status || sp.source || sp.from || sp.to || sp.q) && (
+          {(sp.status || sp.source || sp.from || sp.to || sp.q || sp.view) && (
             <Link
               href="/admin/bookings"
               className="text-sm text-gray-400 hover:text-gray-600 underline"
@@ -227,6 +311,7 @@ export default async function BookingsPage({
                   <th className="px-4 py-3 text-left font-medium text-gray-500 text-xs">Source</th>
                   <th className="px-4 py-3 text-right font-medium text-gray-500 text-xs">Total</th>
                   <th className="px-4 py-3 text-right font-medium text-gray-500 text-xs">Balance</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-500 text-xs">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -273,6 +358,9 @@ export default async function BookingsPage({
                         <span className={b.balanceDue > 0 ? "text-amber-600 font-medium" : "text-gray-400"}>
                           {formatINR(b.balanceDue)}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <BookingRowActions bookingId={b.id} status={b.status} />
                       </td>
                     </tr>
                   );

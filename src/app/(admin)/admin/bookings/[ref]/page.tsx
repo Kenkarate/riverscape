@@ -1,10 +1,12 @@
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, AlertCircle, FileText } from "lucide-react";
 import { formatINR } from "@/lib/pricing";
 import { bookingStatusBadge, sourceBadge, mealPlanLabel, paymentStatusBadge } from "@/lib/badges";
 import BookingActions from "@/components/admin/booking-actions";
+import BookingEditPanel from "@/components/admin/booking-edit-panel";
 import RecordPaymentForm from "@/components/admin/record-payment-form";
 import GenerateInvoiceButton from "@/components/admin/generate-invoice-button";
 import RoomAssignSelect from "@/components/admin/room-assign-select";
@@ -78,6 +80,19 @@ export default async function BookingDetailPage({
 
   if (!booking) notFound();
 
+  const session = await auth();
+  const role = (session?.user as { role?: string })?.role ?? null;
+  const isAdmin = role === "ADMIN" || role === "SUPER_ADMIN";
+
+  // Room types available for the optional "move room type" edit.
+  const roomTypeOptions = await prisma.roomType
+    .findMany({
+      where: { propertyId: booking.propertyId, isActive: true },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    })
+    .catch(() => [] as { id: string; name: string }[]);
+
   const statusB = bookingStatusBadge[booking.status];
   const sourceB = sourceBadge[booking.source];
   const stayNights = nights(booking.checkIn, booking.checkOut);
@@ -109,7 +124,24 @@ export default async function BookingDetailPage({
               Created {formatDateTime(booking.createdAt)}
             </p>
           </div>
-          <BookingActions bookingId={booking.id} status={booking.status} />
+          <div className="flex flex-wrap items-center gap-2">
+            <BookingEditPanel
+              bookingRef={booking.bookingRef}
+              status={booking.status}
+              roomTypes={roomTypeOptions}
+              initial={{
+                checkIn: booking.checkIn.toISOString().slice(0, 10),
+                checkOut: booking.checkOut.toISOString().slice(0, 10),
+                adults: booking.adults,
+                children: booking.children,
+                mealPlan: booking.mealPlan,
+                source: booking.source,
+                specialRequests: booking.specialRequests,
+                roomTypeId: booking.rooms[0]?.roomTypeId ?? "",
+              }}
+            />
+            <BookingActions bookingId={booking.id} status={booking.status} isAdmin={isAdmin} />
+          </div>
         </div>
       </div>
 

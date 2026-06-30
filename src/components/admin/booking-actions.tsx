@@ -13,9 +13,11 @@ import type { BookingStatus } from "@prisma/client";
 interface Props {
   bookingId: string;
   status: BookingStatus;
+  /** Cancellation is admin-only — the Cancel button is hidden for non-admins. */
+  isAdmin?: boolean;
 }
 
-export default function BookingActions({ bookingId, status }: Props) {
+export default function BookingActions({ bookingId, status, isAdmin = false }: Props) {
   const [isPending, startTransition] = useTransition();
   const [showCancel, setShowCancel] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
@@ -62,7 +64,7 @@ export default function BookingActions({ bookingId, status }: Props) {
           Check Out
         </button>
       )}
-      {(status === "PENDING" || status === "CONFIRMED") && !showCancel && (
+      {isAdmin && (status === "PENDING" || status === "CONFIRMED") && !showCancel && (
         <button
           disabled={isPending}
           onClick={() => setShowCancel(true)}
@@ -71,7 +73,7 @@ export default function BookingActions({ bookingId, status }: Props) {
           Cancel
         </button>
       )}
-      {showCancel && (
+      {isAdmin && showCancel && (
         <div className="flex items-center gap-2 flex-wrap">
           <input
             type="text"

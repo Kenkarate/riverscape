@@ -4,11 +4,12 @@ import { Fragment, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  Check,
+  Ban,
   CheckCircle2,
-  ChevronDown,
+  ExternalLink,
   Loader2,
-  Lock,
+  LogIn,
+  LogOut,
   Plus,
   X,
 } from "lucide-react";
@@ -16,21 +17,27 @@ import { cn } from "@/lib/utils";
 import { formatINR } from "@/lib/pricing";
 import { createRackBooking } from "@/app/(admin)/admin/room-rack/actions";
 import {
-  createSalesAllocation,
-  releaseSalesAllocation,
-  updateUserColor,
-} from "@/app/(admin)/admin/allocation/actions";
-import { SALES_COLOR_PALETTE, SALES_COLOR_DEFAULT } from "@/lib/sales-colors";
+  updateBooking,
+  checkInBooking,
+  checkOutBooking,
+  cancelBooking,
+} from "@/app/(admin)/admin/bookings/[ref]/actions";
+import { bookingStatusBadge } from "@/lib/badges";
 import type { BookingStatus } from "@prisma/client";
 
 // ─── Shared entry shape (also consumed by the server page) ────────────────────
 export interface RackEntry {
   bookingRoomId: string;
+  bookingId: string;
   bookingRef: string;
   guestName: string;
   status: BookingStatus;
+  adults: number;
+  children: number;
   paidAmount: number;
   balanceDue: number;
+  checkIn: string; // YYYY-MM-DD
+  checkOut: string; // YYYY-MM-DD
   isFirst: boolean; // true on the check-in night → render the labelled chip
   nights: number; // total nights of the stay (tooltip)
 }
@@ -43,54 +50,11 @@ interface RackRoom {
   roomTypeName: string;
 }
 
-interface RoomTypeSummary {
-  id: string;
-  name: string;
-  unitCount: number;
-}
-
-interface InventoryCell {
-  total: number;
-  booked: number;
-  blocked: number;
-  stopSell: boolean;
-}
-
-interface AllocChip {
-  id: string;
-  units: number;
-  label: string | null;
-  createdBy: { id: string; name: string | null; salesColor: string | null } | null;
-}
-
-interface AllocationRow {
-  id: string;
-  roomTypeId: string;
-  roomTypeName: string;
-  checkIn: string;
-  checkOut: string;
-  units: number;
-  label: string | null;
-  createdBy: { id: string; name: string | null; salesColor: string | null } | null;
-}
-
-interface CurrentUser {
-  id: string;
-  name: string | null;
-  salesColor: string | null;
-  role: string | null;
-}
-
 interface Props {
   rooms: RackRoom[]; // flat, pre-ordered by roomType name then number
-  roomTypes: RoomTypeSummary[];
   dates: string[]; // 14 ISO date strings
   cellMap: Record<string, Record<string, RackEntry[]>>; // booking gantt
-  inventoryMap: Record<string, Record<string, InventoryCell>>;
-  allocMap: Record<string, Record<string, AllocChip[]>>;
-  allocations: AllocationRow[];
-  currentUser: CurrentUser | null;
-  colorLocked: boolean;
+  role: string | null;
   todayStr: string;
 }
 
@@ -155,9 +119,6 @@ function isWeekend(iso: string) {
   const g = parseLocal(iso).getDay();
   return g === 0 || g === 6;
 }
-function fmtDate(iso: string) {
-  return parseLocal(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
-}
 
 // Progressive disclosure of columns: 7 on mobile, 10 on tablet, 14 on desktop.
 function colVisibility(i: number) {
@@ -178,69 +139,59 @@ const ADMIN_ROLES = ["ADMIN", "SUPER_ADMIN"];
 
 type Panel =
   | {
-      kind: "booking";
+      kind: "create";
       roomId: string;
       roomNumber: string;
       roomTypeName: string;
       checkIn: string;
     }
-  | { kind: "alloc"; roomTypeId: string; roomTypeName: string; checkIn: string };
+  | {
+      kind: "edit";
+      entry: RackEntry;
+      roomNumber: string;
+      roomTypeName: string;
+    };
 
-export default function RoomRackGrid({
-  rooms,
-  roomTypes,
-  dates,
-  cellMap,
-  inventoryMap,
-  allocMap,
-  allocations,
-  currentUser,
-  colorLocked,
-  todayStr,
-}: Props) {
+export default function RoomRackGrid({ rooms, dates, cellMap, role, todayStr }: Props) {
   const router = useRouter();
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const role = currentUser?.role ?? null;
   const isStaff = !!role && STAFF_ROLES.includes(role);
   const isAdmin = !!role && ADMIN_ROLES.includes(role);
-  // Everyone who reaches this admin page may allocate (SALES + staff).
-  const canAllocate = !!currentUser;
 
-  // ── Panel (booking OR allocation) ───────────────────────────────────────────
+  // ── Panel (create OR edit) ──────────────────────────────────────────────────
   const [panel, setPanel] = useState<Panel | null>(null);
   const [entered, setEntered] = useState(false);
-  const [inventoryOpen, setInventoryOpen] = useState(true);
 
-  // booking form
+  // shared stay fields (used by both create and edit)
   const [checkIn, setCheckIn] = useState("");
   const [checkOut, setCheckOut] = useState("");
+  const [adults, setAdults] = useState(2);
+  const [children, setChildren] = useState(0);
+
+  // create-only fields
   const [guestName, setGuestName] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
-  const [adults, setAdults] = useState(2);
   const [source, setSource] = useState("WALK_IN");
   const [paymentMethod, setPaymentMethod] = useState("None");
   const [amount, setAmount] = useState("");
   const [successRef, setSuccessRef] = useState<string | null>(null);
 
-  // allocation form
-  const [units, setUnits] = useState(1);
-  const [label, setLabel] = useState("");
+  // edit-only fields
+  const [showCancel, setShowCancel] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
 
   const [formError, setFormError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [isColorPending, startColor] = useTransition();
-  const [releasingId, setReleasingId] = useState<string | null>(null);
-  const [, startRelease] = useTransition();
 
   function playEnter() {
     setEntered(false);
     requestAnimationFrame(() => requestAnimationFrame(() => setEntered(true)));
   }
 
-  function openBookingPanel(room: RackRoom, dateStr: string) {
+  function openCreatePanel(room: RackRoom, dateStr: string) {
     setPanel({
-      kind: "booking",
+      kind: "create",
       roomId: room.id,
       roomNumber: room.number,
       roomTypeName: room.roomTypeName,
@@ -251,6 +202,7 @@ export default function RoomRackGrid({
     setGuestName("");
     setGuestPhone("");
     setAdults(2);
+    setChildren(0);
     setSource("WALK_IN");
     setPaymentMethod("None");
     setAmount("");
@@ -259,17 +211,19 @@ export default function RoomRackGrid({
     playEnter();
   }
 
-  function openAllocPanel(rt: { id: string; name: string }, dateStr: string) {
+  function openEditPanel(entry: RackEntry, room: RackRoom) {
     setPanel({
-      kind: "alloc",
-      roomTypeId: rt.id,
-      roomTypeName: rt.name,
-      checkIn: dateStr,
+      kind: "edit",
+      entry,
+      roomNumber: room.number,
+      roomTypeName: room.roomTypeName,
     });
-    setCheckIn(dateStr);
-    setCheckOut(nextISO(dateStr));
-    setUnits(1);
-    setLabel("");
+    setCheckIn(entry.checkIn);
+    setCheckOut(entry.checkOut);
+    setAdults(entry.adults);
+    setChildren(entry.children);
+    setShowCancel(false);
+    setCancelReason("");
     setFormError(null);
     playEnter();
   }
@@ -280,11 +234,8 @@ export default function RoomRackGrid({
       setPanel(null);
       setFormError(null);
       setSuccessRef(null);
+      setShowCancel(false);
     }, 200);
-  }
-
-  function openBooking(ref: string) {
-    router.push(`/admin/bookings/${ref}`);
   }
 
   function handleCheckInChange(value: string) {
@@ -294,9 +245,9 @@ export default function RoomRackGrid({
     }
   }
 
-  function handleBookingSubmit(e: React.FormEvent) {
+  function handleCreateSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!panel || panel.kind !== "booking") return;
+    if (!panel || panel.kind !== "create") return;
     setFormError(null);
 
     if (!guestName.trim()) {
@@ -340,161 +291,90 @@ export default function RoomRackGrid({
     });
   }
 
-  function handleAllocSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!panel || panel.kind !== "alloc") return;
+  function handleEditSave() {
+    if (!panel || panel.kind !== "edit") return;
     setFormError(null);
-
     if (parseLocal(checkOut) <= parseLocal(checkIn)) {
       setFormError("Check-out must be after check-in.");
       return;
     }
-    if (units < 1) {
-      setFormError("Units must be at least 1.");
-      return;
-    }
-
     startTransition(async () => {
-      try {
-        await createSalesAllocation({
-          roomTypeId: panel.roomTypeId,
-          checkIn,
-          checkOut,
-          units,
-          label: label.trim() || undefined,
-        });
+      const res = await updateBooking({
+        bookingRef: panel.entry.bookingRef,
+        checkIn,
+        checkOut,
+        adults,
+        children,
+      });
+      if (res.success) {
         router.refresh();
         closePanel();
-      } catch (err) {
-        setFormError(err instanceof Error ? err.message : "Failed to create allocation.");
+      } else {
+        setFormError(res.error ?? "Could not update booking.");
       }
     });
   }
 
-  function handlePickColor(hex: string) {
-    startColor(async () => {
+  function runStatusAction(fn: () => Promise<void>) {
+    setFormError(null);
+    startTransition(async () => {
       try {
-        await updateUserColor(hex);
+        await fn();
         router.refresh();
+        closePanel();
       } catch {
-        /* validation is enforced server-side; ignore client errors */
+        setFormError("Action failed. Please try again.");
       }
     });
   }
 
-  function handleRelease(id: string) {
-    setReleasingId(id);
-    startRelease(async () => {
+  function handleCancel() {
+    if (!panel || panel.kind !== "edit") return;
+    setFormError(null);
+    startTransition(async () => {
       try {
-        await releaseSalesAllocation(id);
+        await cancelBooking(panel.entry.bookingId, cancelReason);
         router.refresh();
+        closePanel();
       } catch {
-        /* server enforces permissions */
-      } finally {
-        setReleasingId(null);
+        setFormError("Could not cancel — admin access is required.");
       }
     });
   }
-
-  function canReleaseRow(alloc: AllocationRow) {
-    if (!currentUser) return false;
-    return isAdmin || alloc.createdBy?.id === currentUser.id;
-  }
-
-  // Unique staff colours present in the active allocations → legend.
-  const allocLegend = Array.from(
-    new Map(
-      allocations
-        .filter((a) => a.createdBy)
-        .map((a) => [
-          a.createdBy!.id,
-          {
-            name: a.createdBy!.name ?? "Staff",
-            color: a.createdBy!.salesColor ?? SALES_COLOR_DEFAULT,
-          },
-        ])
-    ).values()
-  );
 
   const totalCols = dates.length + 1;
 
+  // Non front-desk roles (e.g. SALES) don't manage the physical room rack.
+  if (!isStaff) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+        <p className="text-sm font-medium text-gray-700">Front-desk access required</p>
+        <p className="text-sm text-gray-400 mt-1">
+          The room booking rack is available to front-desk staff and administrators.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      {/* ─── Top strip: Your Color + payment legend ───────────────────────────── */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        {currentUser ? (
-          <div className="flex flex-wrap items-center gap-2 bg-white rounded-xl border border-gray-200 px-3 py-2">
-            <span className="text-xs font-medium text-gray-500">Your colour</span>
-            <span className="flex items-center gap-1.5 text-xs text-gray-600">
-              <span
-                className="w-3.5 h-3.5 rounded-full inline-block ring-1 ring-black/10"
-                style={{ backgroundColor: currentUser.salesColor ?? SALES_COLOR_DEFAULT }}
-              />
-              {currentUser.name ?? "You"}
-            </span>
-            {colorLocked ? (
-              <span className="flex items-center gap-1 text-[11px] text-gray-400">
-                <Lock size={11} /> locked
-              </span>
-            ) : (
-              <div className="flex items-center gap-1">
-                {SALES_COLOR_PALETTE.map((hex) => {
-                  const active = currentUser.salesColor?.toLowerCase() === hex.toLowerCase();
-                  return (
-                    <button
-                      key={hex}
-                      type="button"
-                      onClick={() => handlePickColor(hex)}
-                      disabled={isColorPending}
-                      aria-label={`Set colour ${hex}`}
-                      title={hex}
-                      className={cn(
-                        "w-5 h-5 rounded-full inline-flex items-center justify-center transition-transform hover:scale-110 disabled:opacity-50",
-                        active ? "ring-2 ring-offset-1 ring-gray-800" : "ring-1 ring-black/10"
-                      )}
-                      style={{ backgroundColor: hex }}
-                    >
-                      {active && <Check size={11} className="text-white" />}
-                    </button>
-                  );
-                })}
-                {isColorPending && <Loader2 size={13} className="animate-spin text-gray-400" />}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div />
-        )}
-
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 bg-white rounded-xl border border-gray-200 px-3 py-2 text-[11px] text-gray-500">
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" /> Fully paid
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> Advance
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> Pending
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-gray-400 inline-block" /> Cancelled
-          </span>
-          {allocLegend.length > 0 && (
-            <span className="w-px h-3 bg-gray-200 hidden sm:inline-block" />
-          )}
-          {allocLegend.map((u) => (
-            <span key={u.name + u.color} className="flex items-center gap-1.5">
-              <span
-                className="w-2.5 h-2.5 rounded-full inline-block ring-1 ring-black/5"
-                style={{ backgroundColor: u.color }}
-              />
-              {u.name}
-            </span>
-          ))}
-        </div>
+      {/* ─── Payment status legend ────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 bg-white rounded-xl border border-gray-200 px-3 py-2 text-[11px] text-gray-500 w-fit">
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" /> Fully paid
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> Advance
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> Pending
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-gray-400 inline-block" /> Cancelled
+        </span>
       </div>
 
-      {/* ─── Unified scrollable grid ──────────────────────────────────────────── */}
+      {/* ─── Booking Gantt ────────────────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div ref={scrollRef} className="overflow-auto max-h-[calc(100vh-220px)]">
           <table className="w-full text-xs border-separate border-spacing-0">
@@ -505,26 +385,18 @@ export default function RoomRackGrid({
                 </th>
                 {dates.map((iso, i) => {
                   const today = iso === todayStr;
-                  const weekend = isWeekend(iso);
                   return (
                     <th
                       key={iso}
                       className={cn(
                         "sticky top-0 z-20 px-1 py-2 text-center font-medium w-[64px] min-w-[64px] sm:w-[80px] sm:min-w-[80px] border-b border-r border-gray-100",
-                        today
-                          ? "bg-amber-100 text-[#1a3a2a]"
-                          : weekend
-                          ? "bg-gray-50 text-gray-500"
-                          : "bg-gray-50 text-gray-500",
+                        today ? "bg-amber-100 text-[#1a3a2a]" : "bg-gray-50 text-gray-500",
                         colVisibility(i)
                       )}
                     >
                       <div>{dayLabel(iso)}</div>
                       <div
-                        className={cn(
-                          "font-semibold",
-                          today ? "text-[#1a3a2a]" : "text-gray-700"
-                        )}
+                        className={cn("font-semibold", today ? "text-[#1a3a2a]" : "text-gray-700")}
                       >
                         {dayNum(iso)}
                       </div>
@@ -535,346 +407,125 @@ export default function RoomRackGrid({
             </thead>
 
             <tbody>
-              {/* ─── Availability & Sales Allocation section ──────────────────── */}
-              {roomTypes.length > 0 && (
-                <tr>
-                  <td
-                    colSpan={totalCols}
-                    className="sticky left-0 bg-[#1a3a2a] text-white px-3 py-1.5 border-b border-[#14301f]"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setInventoryOpen((o) => !o)}
-                      className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide"
-                      aria-expanded={inventoryOpen}
-                    >
-                      <ChevronDown
-                        size={13}
-                        className={cn("transition-transform", inventoryOpen ? "" : "-rotate-90")}
-                      />
-                      Availability &amp; Sales Allocation
-                    </button>
-                  </td>
-                </tr>
-              )}
-
-              {inventoryOpen &&
-                roomTypes.map((rt) => (
-                  <tr key={`inv-${rt.id}`} className="group/row">
-                    <td className="sticky left-0 z-10 bg-white px-2 sm:px-3 py-2 whitespace-nowrap border-b border-r border-gray-100 group-hover/row:bg-gray-50">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="font-medium text-gray-800 truncate max-w-[90px] sm:max-w-none">
-                            {rt.name}
-                          </div>
-                          <div className="text-[11px] text-gray-400 font-normal">
-                            {rt.unitCount} unit{rt.unitCount !== 1 ? "s" : ""}
-                          </div>
-                        </div>
-                        {canAllocate && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              openAllocPanel({ id: rt.id, name: rt.name }, dates[0])
-                            }
-                            title={`Allocate ${rt.name}`}
-                            className="shrink-0 inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-1 rounded-md border border-[#1a3a2a]/20 text-[#1a3a2a] hover:bg-[#1a3a2a]/5 transition-colors"
-                          >
-                            <Plus size={11} />
-                            <span className="hidden sm:inline">Allocate</span>
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                    {dates.map((iso, i) => {
-                      const cell = inventoryMap[rt.id]?.[iso];
-                      const total = cell?.total ?? rt.unitCount;
-                      const available = cell
-                        ? Math.max(0, cell.total - cell.booked - cell.blocked)
-                        : rt.unitCount;
-                      const stopSell = cell?.stopSell ?? false;
-                      const today = iso === todayStr;
-                      const allocs = allocMap[rt.id]?.[iso] ?? [];
-                      const pct = total > 0 ? available / total : 0;
-
-                      const badgeClass = stopSell
-                        ? "bg-red-100 text-red-600"
-                        : available === 0
-                        ? "bg-red-100 text-red-700"
-                        : pct <= 0.5
-                        ? "bg-amber-100 text-amber-700"
-                        : "bg-green-100 text-green-700";
-
-                      return (
+              {rooms.map((room, idx) => {
+                const showGroup =
+                  idx === 0 || rooms[idx - 1].roomTypeName !== room.roomTypeName;
+                return (
+                  <Fragment key={room.id}>
+                    {showGroup && (
+                      <tr>
                         <td
-                          key={iso}
-                          onClick={
-                            canAllocate
-                              ? () => openAllocPanel({ id: rt.id, name: rt.name }, iso)
-                              : undefined
-                          }
-                          title={
-                            stopSell
-                              ? "Stop sell — click to allocate"
-                              : canAllocate
-                              ? `${available} free — click to allocate`
-                              : `${available} free`
-                          }
-                          className={cn(
-                            "h-12 w-[64px] min-w-[64px] sm:w-[80px] sm:min-w-[80px] text-center align-middle px-0.5 border-b border-r border-gray-100",
-                            today ? "bg-amber-50/60" : "",
-                            canAllocate ? "cursor-pointer hover:bg-[#1a3a2a]/5" : "",
-                            colVisibility(i)
-                          )}
+                          colSpan={totalCols}
+                          className="sticky left-0 bg-[#1a3a2a]/[0.06] px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-[#1a3a2a] border-b border-gray-200"
                         >
-                          <div
-                            className={cn(
-                              "inline-flex items-center justify-center min-w-[22px] h-5 px-1 rounded-md font-semibold text-[11px]",
-                              badgeClass
-                            )}
-                          >
-                            {stopSell ? "S" : available}
-                          </div>
-                          {allocs.length > 0 && (
-                            <div className="flex flex-wrap items-center justify-center gap-0.5 mt-1">
-                              {allocs.slice(0, 6).map((a) => (
-                                <span
-                                  key={a.id}
-                                  className="w-2 h-2 rounded-full inline-block ring-1 ring-black/5"
-                                  style={{
-                                    backgroundColor:
-                                      a.createdBy?.salesColor ?? SALES_COLOR_DEFAULT,
-                                  }}
-                                  title={`${a.createdBy?.name ?? "Staff"}: ${a.units} unit${
-                                    a.units !== 1 ? "s" : ""
-                                  }${a.label ? ` · ${a.label}` : ""}`}
-                                />
-                              ))}
-                            </div>
-                          )}
+                          {room.roomTypeName}
                         </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                      </tr>
+                    )}
+                    <tr className="group/row">
+                      <td className="sticky left-0 z-10 bg-white px-2 sm:px-3 py-2 whitespace-nowrap border-b border-r border-gray-100 group-hover/row:bg-gray-50">
+                        {/* Compact on mobile: "101 · D"; full on desktop */}
+                        <div className="font-medium text-gray-800">
+                          <span className="sm:hidden">
+                            {room.number} · {typeInitial(room.roomTypeName)}
+                          </span>
+                          <span className="hidden sm:inline">Room {room.number}</span>
+                        </div>
+                        <div className="hidden sm:block text-[11px] text-gray-400 font-normal">
+                          {room.roomTypeName}
+                          {room.floor ? ` · Floor ${room.floor}` : ""}
+                        </div>
+                      </td>
+                      {dates.map((iso, i) => {
+                        const entries = cellMap[room.id]?.[iso] ?? [];
+                        const isEmpty = entries.length === 0;
+                        const today = iso === todayStr;
 
-              {/* ─── Physical room booking Gantt (staff only) ─────────────────── */}
-              {isStaff && rooms.length > 0 && (
-                <>
-                  <tr>
-                    <td
-                      colSpan={totalCols}
-                      className="sticky left-0 bg-[#1a3a2a] text-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide border-b border-[#14301f]"
-                    >
-                      Room Rack — Bookings
-                    </td>
-                  </tr>
-
-                  {rooms.map((room, idx) => {
-                    const showGroup =
-                      idx === 0 || rooms[idx - 1].roomTypeName !== room.roomTypeName;
-                    return (
-                      <Fragment key={room.id}>
-                        {showGroup && (
-                          <tr>
-                            <td
-                              colSpan={totalCols}
-                              className="sticky left-0 bg-[#1a3a2a]/[0.06] px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-[#1a3a2a] border-b border-gray-200"
-                            >
-                              {room.roomTypeName}
-                            </td>
-                          </tr>
-                        )}
-                        <tr className="group/row">
-                          <td className="sticky left-0 z-10 bg-white px-2 sm:px-3 py-2 whitespace-nowrap border-b border-r border-gray-100 group-hover/row:bg-gray-50">
-                            {/* Compact on mobile: "101 · D"; full on desktop */}
-                            <div className="font-medium text-gray-800">
-                              <span className="sm:hidden">
-                                {room.number} · {typeInitial(room.roomTypeName)}
+                        return (
+                          <td
+                            key={iso}
+                            onClick={isEmpty ? () => openCreatePanel(room, iso) : undefined}
+                            className={cn(
+                              "h-12 w-[64px] min-w-[64px] sm:w-[80px] sm:min-w-[80px] align-middle px-0.5 border-b border-r border-gray-100",
+                              today ? "bg-amber-50/60" : "",
+                              isEmpty ? "cursor-pointer hover:bg-[#1a3a2a]/5 group/cell" : "",
+                              colVisibility(i)
+                            )}
+                            title={isEmpty ? "Click to create a booking" : undefined}
+                          >
+                            {isEmpty ? (
+                              <span className="hidden group-hover/cell:flex items-center justify-center h-full text-[#1a3a2a]/70">
+                                <Plus size={14} />
                               </span>
-                              <span className="hidden sm:inline">Room {room.number}</span>
-                            </div>
-                            <div className="hidden sm:block text-[11px] text-gray-400 font-normal">
-                              {room.roomTypeName}
-                              {room.floor ? ` · Floor ${room.floor}` : ""}
-                            </div>
-                          </td>
-                          {dates.map((iso, i) => {
-                            const entries = cellMap[room.id]?.[iso] ?? [];
-                            const isEmpty = entries.length === 0;
-                            const today = iso === todayStr;
-
-                            return (
-                              <td
-                                key={iso}
-                                onClick={isEmpty ? () => openBookingPanel(room, iso) : undefined}
-                                className={cn(
-                                  "h-12 w-[64px] min-w-[64px] sm:w-[80px] sm:min-w-[80px] align-middle px-0.5 border-b border-r border-gray-100",
-                                  today ? "bg-amber-50/60" : "",
-                                  isEmpty
-                                    ? "cursor-pointer hover:bg-[#1a3a2a]/5 group/cell"
-                                    : "",
-                                  colVisibility(i)
-                                )}
-                                title={isEmpty ? "Click to create a booking" : undefined}
-                              >
-                                {isEmpty ? (
-                                  <span className="hidden group-hover/cell:flex items-center justify-center h-full text-[#1a3a2a]/70">
-                                    <Plus size={14} />
-                                  </span>
-                                ) : (
-                                  <div className="flex flex-col gap-0.5">
-                                    {entries.map((e) => {
-                                      const tone = toneFor(e);
-                                      const tip = `${e.guestName} · ${e.bookingRef} · ${
-                                        e.nights
-                                      } night${e.nights !== 1 ? "s" : ""}`;
-                                      if (e.isFirst) {
-                                        return (
-                                          <button
-                                            key={e.bookingRoomId}
-                                            type="button"
-                                            onClick={(ev) => {
-                                              ev.stopPropagation();
-                                              openBooking(e.bookingRef);
-                                            }}
-                                            title={tip}
+                            ) : (
+                              <div className="flex flex-col gap-0.5">
+                                {entries.map((e) => {
+                                  const tone = toneFor(e);
+                                  const tip = `${e.guestName} · ${e.bookingRef} · ${e.nights} night${
+                                    e.nights !== 1 ? "s" : ""
+                                  }`;
+                                  if (e.isFirst) {
+                                    return (
+                                      <button
+                                        key={e.bookingRoomId}
+                                        type="button"
+                                        onClick={(ev) => {
+                                          ev.stopPropagation();
+                                          openEditPanel(e, room);
+                                        }}
+                                        title={tip}
+                                        className={cn(
+                                          "w-full rounded-md px-1 py-1 text-left leading-tight transition-shadow hover:shadow-sm",
+                                          TONE_CHIP[tone]
+                                        )}
+                                      >
+                                        {/* Mobile: coloured dot only. Desktop: name + ref */}
+                                        <span className="sm:hidden flex items-center justify-center">
+                                          <span
                                             className={cn(
-                                              "w-full rounded-md px-1 py-1 text-left leading-tight transition-shadow hover:shadow-sm",
-                                              TONE_CHIP[tone]
+                                              "w-2.5 h-2.5 rounded-full inline-block",
+                                              TONE_DOT[tone]
                                             )}
-                                          >
-                                            {/* Mobile: coloured dot only. Desktop: name + ref */}
-                                            <span className="sm:hidden flex items-center justify-center">
-                                              <span
-                                                className={cn(
-                                                  "w-2.5 h-2.5 rounded-full inline-block",
-                                                  TONE_DOT[tone]
-                                                )}
-                                              />
-                                            </span>
-                                            <span className="hidden sm:block font-medium truncate">
-                                              {e.guestName.slice(0, 12)}
-                                            </span>
-                                            <span className="hidden sm:block text-[10px] opacity-70 truncate">
-                                              {e.bookingRef}
-                                            </span>
-                                          </button>
-                                        );
-                                      }
-                                      return (
-                                        <button
-                                          key={e.bookingRoomId}
-                                          type="button"
-                                          onClick={(ev) => {
-                                            ev.stopPropagation();
-                                            openBooking(e.bookingRef);
-                                          }}
-                                          title={tip}
-                                          aria-label={`Open booking ${e.bookingRef}`}
-                                          className={cn(
-                                            "block w-full h-2.5 rounded-sm transition-opacity hover:opacity-80",
-                                            TONE_BAR[tone]
-                                          )}
-                                        />
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      </Fragment>
-                    );
-                  })}
-                </>
-              )}
+                                          />
+                                        </span>
+                                        <span className="hidden sm:block font-medium truncate">
+                                          {e.guestName.slice(0, 12)}
+                                        </span>
+                                        <span className="hidden sm:block text-[10px] opacity-70 truncate">
+                                          {e.bookingRef}
+                                        </span>
+                                      </button>
+                                    );
+                                  }
+                                  return (
+                                    <button
+                                      key={e.bookingRoomId}
+                                      type="button"
+                                      onClick={(ev) => {
+                                        ev.stopPropagation();
+                                        openEditPanel(e, room);
+                                      }}
+                                      title={tip}
+                                      aria-label={`Manage booking ${e.bookingRef}`}
+                                      className={cn(
+                                        "block w-full h-2.5 rounded-sm transition-opacity hover:opacity-80",
+                                        TONE_BAR[tone]
+                                      )}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* ─── Active sales allocations (release list) ──────────────────────────── */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">Active Sales Allocations</h2>
-        </div>
-        {allocations.length === 0 ? (
-          <div className="px-4 py-10 text-center text-sm text-gray-400">
-            No active allocations in this date range.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 text-xs text-gray-500">
-                  <th className="px-4 py-2.5 text-left font-medium">Staff</th>
-                  <th className="px-4 py-2.5 text-left font-medium">Room Type</th>
-                  <th className="px-4 py-2.5 text-left font-medium hidden sm:table-cell">
-                    Check-in
-                  </th>
-                  <th className="px-4 py-2.5 text-left font-medium hidden sm:table-cell">
-                    Check-out
-                  </th>
-                  <th className="px-4 py-2.5 text-center font-medium">Units</th>
-                  <th className="px-4 py-2.5 text-left font-medium hidden md:table-cell">Label</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {allocations.map((a) => {
-                  const releasing = releasingId === a.id;
-                  return (
-                    <tr key={a.id} className="hover:bg-gray-50/50">
-                      <td className="px-4 py-2.5">
-                        <span className="flex items-center gap-2 text-gray-700">
-                          <span
-                            className="w-2.5 h-2.5 rounded-full inline-block ring-1 ring-black/5 shrink-0"
-                            style={{
-                              backgroundColor: a.createdBy?.salesColor ?? SALES_COLOR_DEFAULT,
-                            }}
-                          />
-                          {a.createdBy?.name ?? "Staff"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 text-gray-700">{a.roomTypeName}</td>
-                      <td className="px-4 py-2.5 text-gray-600 hidden sm:table-cell">
-                        {fmtDate(a.checkIn)}
-                      </td>
-                      <td className="px-4 py-2.5 text-gray-600 hidden sm:table-cell">
-                        {fmtDate(a.checkOut)}
-                      </td>
-                      <td className="px-4 py-2.5 text-center text-gray-700">{a.units}</td>
-                      <td className="px-4 py-2.5 text-gray-500 hidden md:table-cell">
-                        {a.label ?? "—"}
-                      </td>
-                      <td className="px-4 py-2.5 text-right">
-                        {canReleaseRow(a) ? (
-                          <button
-                            type="button"
-                            onClick={() => handleRelease(a.id)}
-                            disabled={releasing}
-                            className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors disabled:opacity-50"
-                          >
-                            {releasing ? (
-                              <Loader2 size={12} className="animate-spin" />
-                            ) : (
-                              <X size={12} />
-                            )}
-                            Release
-                          </button>
-                        ) : (
-                          <span className="text-xs text-gray-300">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
 
       {/* ─── Slide / bottom-sheet panel ───────────────────────────────────────── */}
@@ -904,9 +555,9 @@ export default function RoomRackGrid({
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
               <div className="min-w-0">
                 <h2 className="text-sm font-semibold text-gray-900 truncate">
-                  {panel.kind === "booking"
+                  {panel.kind === "create"
                     ? `New Booking — Room ${panel.roomNumber}`
-                    : "New Sales Allocation"}
+                    : `Manage Booking — Room ${panel.roomNumber}`}
                 </h2>
                 <p className="text-xs text-gray-400 mt-0.5 truncate">{panel.roomTypeName}</p>
               </div>
@@ -920,8 +571,8 @@ export default function RoomRackGrid({
               </button>
             </div>
 
-            {/* Booking success */}
-            {panel.kind === "booking" && successRef ? (
+            {panel.kind === "create" && successRef ? (
+              /* ─── Booking success ─────────────────────────────────────────── */
               <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
                 <CheckCircle2 size={40} className="text-green-500" />
                 <div>
@@ -938,10 +589,10 @@ export default function RoomRackGrid({
                   View Booking
                 </Link>
               </div>
-            ) : panel.kind === "booking" ? (
-              /* ─── Booking form ─────────────────────────────────────────────── */
+            ) : panel.kind === "create" ? (
+              /* ─── Create booking form ─────────────────────────────────────── */
               <form
-                onSubmit={handleBookingSubmit}
+                onSubmit={handleCreateSubmit}
                 className="flex-1 overflow-y-auto px-5 py-4 space-y-4"
               >
                 <div>
@@ -963,9 +614,7 @@ export default function RoomRackGrid({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">
-                      Check-out
-                    </label>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Check-out</label>
                     <input
                       type="date"
                       value={checkOut}
@@ -1109,18 +758,51 @@ export default function RoomRackGrid({
                 </div>
               </form>
             ) : (
-              /* ─── Allocation form ──────────────────────────────────────────── */
-              <form
-                onSubmit={handleAllocSubmit}
-                className="flex-1 overflow-y-auto px-5 py-4 space-y-4"
-              >
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Room Type</label>
-                  <div className="w-full border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-700">
-                    {panel.roomTypeName}
+              /* ─── Quick-edit booking ───────────────────────────────────────── */
+              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+                {/* Guest + ref + status summary */}
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 space-y-1.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-medium text-gray-900 text-sm truncate">
+                      {panel.entry.guestName}
+                    </span>
+                    <span
+                      className={cn(
+                        "text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0",
+                        bookingStatusBadge[panel.entry.status].className
+                      )}
+                    >
+                      {bookingStatusBadge[panel.entry.status].label}
+                    </span>
+                  </div>
+                  <Link
+                    href={`/admin/bookings/${panel.entry.bookingRef}`}
+                    className="inline-flex items-center gap-1 text-xs font-mono text-[#1a3a2a] hover:underline"
+                  >
+                    {panel.entry.bookingRef}
+                  </Link>
+                  <div className="flex items-center gap-4 text-xs text-gray-500 pt-1">
+                    <span>
+                      Paid{" "}
+                      <span className="font-medium text-green-700">
+                        {formatINR(panel.entry.paidAmount)}
+                      </span>
+                    </span>
+                    <span>
+                      Balance{" "}
+                      <span
+                        className={cn(
+                          "font-medium",
+                          panel.entry.balanceDue > 0 ? "text-amber-600" : "text-gray-400"
+                        )}
+                      >
+                        {formatINR(panel.entry.balanceDue)}
+                      </span>
+                    </span>
                   </div>
                 </div>
 
+                {/* Editable stay */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">Check-in</label>
@@ -1128,49 +810,53 @@ export default function RoomRackGrid({
                       type="date"
                       value={checkIn}
                       onChange={(e) => handleCheckInChange(e.target.value)}
-                      required
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a2a]/30"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">
-                      Check-out
-                    </label>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Check-out</label>
                     <input
                       type="date"
                       value={checkOut}
                       min={nextISO(checkIn)}
                       onChange={(e) => setCheckOut(e.target.value)}
-                      required
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a2a]/30"
                     />
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Units</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={units}
-                    onChange={(e) => setUnits(Math.max(1, Number(e.target.value) || 1))}
-                    required
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a2a]/30"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Adults</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={adults}
+                      onChange={(e) =>
+                        setAdults(Math.max(1, Math.min(10, Number(e.target.value) || 1)))
+                      }
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a2a]/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Children</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={10}
+                      value={children}
+                      onChange={(e) =>
+                        setChildren(Math.max(0, Math.min(10, Number(e.target.value) || 0)))
+                      }
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a2a]/30"
+                    />
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">
-                    Label <span className="text-gray-400 font-normal">(optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={label}
-                    onChange={(e) => setLabel(e.target.value)}
-                    placeholder="e.g. Kerala Tours group, MakeMyTrip hold"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a2a]/30"
-                  />
-                </div>
+                <p className="text-[11px] text-gray-400">
+                  Totals and GST are recalculated automatically when you save changes.
+                </p>
 
                 {formError && (
                   <p className="text-red-600 text-xs bg-red-50 border border-red-100 rounded-lg px-3 py-2">
@@ -1178,29 +864,100 @@ export default function RoomRackGrid({
                   </p>
                 )}
 
-                <div className="flex items-center gap-2 pt-2">
-                  <button
-                    type="submit"
-                    disabled={isPending}
-                    className="inline-flex items-center justify-center gap-1.5 flex-1 bg-[#1a3a2a] text-white rounded-lg py-2.5 text-sm font-medium hover:bg-[#14301f] transition-colors disabled:opacity-50"
-                  >
-                    {isPending ? (
-                      <>
-                        <Loader2 size={15} className="animate-spin" /> Saving…
-                      </>
-                    ) : (
-                      "Allocate"
+                <button
+                  type="button"
+                  onClick={handleEditSave}
+                  disabled={isPending}
+                  className="inline-flex w-full items-center justify-center gap-1.5 bg-[#1a3a2a] text-white rounded-lg py-2.5 text-sm font-medium hover:bg-[#14301f] transition-colors disabled:opacity-50"
+                >
+                  {isPending ? (
+                    <>
+                      <Loader2 size={15} className="animate-spin" /> Saving…
+                    </>
+                  ) : (
+                    "Save Changes"
+                  )}
+                </button>
+
+                {/* Quick status actions */}
+                <div className="border-t border-gray-100 pt-4 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    {panel.entry.status === "CONFIRMED" && (
+                      <button
+                        type="button"
+                        disabled={isPending}
+                        onClick={() => runStatusAction(() => checkInBooking(panel.entry.bookingId))}
+                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                      >
+                        <LogIn size={14} /> Check In
+                      </button>
                     )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={closePanel}
-                    className="px-4 py-2.5 text-sm text-gray-500 hover:text-gray-700"
-                  >
-                    Cancel
-                  </button>
+                    {panel.entry.status === "CHECKED_IN" && (
+                      <button
+                        type="button"
+                        disabled={isPending}
+                        onClick={() => runStatusAction(() => checkOutBooking(panel.entry.bookingId))}
+                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium bg-[#1a3a2a] text-white rounded-lg hover:bg-[#14301f] disabled:opacity-50 transition-colors"
+                      >
+                        <LogOut size={14} /> Check Out
+                      </button>
+                    )}
+                    {isAdmin &&
+                      !showCancel &&
+                      (panel.entry.status === "PENDING" ||
+                        panel.entry.status === "CONFIRMED" ||
+                        panel.entry.status === "CHECKED_IN") && (
+                        <button
+                          type="button"
+                          disabled={isPending}
+                          onClick={() => setShowCancel(true)}
+                          className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium border border-red-200 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors"
+                        >
+                          <Ban size={14} /> Cancel
+                        </button>
+                      )}
+                    <Link
+                      href={`/admin/bookings/${panel.entry.bookingRef}`}
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      <ExternalLink size={14} /> View Full Booking
+                    </Link>
+                  </div>
+
+                  {showCancel && (
+                    <div className="space-y-2 rounded-lg border border-red-100 bg-red-50/50 p-3">
+                      <label className="block text-xs font-medium text-red-700">
+                        Cancellation reason
+                      </label>
+                      <input
+                        type="text"
+                        value={cancelReason}
+                        onChange={(e) => setCancelReason(e.target.value)}
+                        placeholder="Reason (optional)"
+                        className="w-full border border-red-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-red-200"
+                      />
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={isPending}
+                          onClick={handleCancel}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                        >
+                          {isPending && <Loader2 size={12} className="animate-spin" />}
+                          Confirm Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowCancel(false)}
+                          className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700"
+                        >
+                          Back
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </form>
+              </div>
             )}
           </div>
         </div>
